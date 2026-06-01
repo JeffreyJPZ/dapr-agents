@@ -274,8 +274,8 @@ Used by `low-stock-events` and `critical-stock-events` topics:
       "queryId": "inventory-alerts-query",
       "ts_ms": 1678886400150
     },
-    "after": { 
-      "itemId": "SKU789", 
+    "after": {
+      "itemId": "SKU789",
       "stockLevel": 5,
       "status": "low"
     }

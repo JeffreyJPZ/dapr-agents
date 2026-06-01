@@ -81,8 +81,8 @@ def _build_payload() -> Dict[str, Any]:
                 "queryId": "inventory-alerts-query",
                 "ts_ms": 1678886400150
             },
-            "after": { 
-                "itemId": ITEM_ID, 
+            "after": {
+                "itemId": ITEM_ID,
                 "stockLevel": STOCK_LEVEL,
                 "status": "low"
             }

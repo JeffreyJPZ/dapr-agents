@@ -36,7 +36,7 @@ def low_stock_order_workflow(ctx: DaprWorkflowContext, wf_input: dict) -> str:
 
     if op == "i":
         item = wf_input["payload"]["after"]
-        
+
         count = yield ctx.call_activity(create_order_count, input={"stock_level": item["stockLevel"]})
         order = yield ctx.call_activity(create_order, input={"item": item, "count": count})
 
@@ -69,7 +69,7 @@ def create_order_count(ctx, input: Dict[str, Any]) -> int:
 
     if stock_level == 0:
         return 100
-    
+
     return random.randint(1, 10) * stock_level
 
 
