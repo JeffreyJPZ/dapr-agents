@@ -63,7 +63,9 @@ from dapr_agents.llm.openai import (
 from dapr_agents.tool import AgentTool, tool
 from dapr_agents.workflow.runners import AgentRunner
 from dapr_agents.workflow.utils.core import call_agent, trigger_agent
+from pkgutil import extend_path
 
+__path__ = extend_path(__path__, __name__)
 __all__ = [
     "DurableAgent",
     "AgentEvent",
