@@ -304,6 +304,7 @@ def _order_pairs_by_cloudevent_type(
 
 def _normalize_status(status: str | TopicEventResponseStatus) -> str | None:
     """Coerce a `TopicEventResponse` status into a status constant if possible"""
+    raw: str
     match status:
         case TopicEventResponseStatus():
             raw = status.name

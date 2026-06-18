@@ -228,7 +228,7 @@ def _make_runner(
 ) -> tuple[AgentRunner, MagicMock]:
     # Stub workflow scheduling; we only care about the calls and inputs
     wf_client = MagicMock()
-    wf_client.schedule_new_workflow = Mock(return_value="instance-1")  # type: ignore[method-assign]
+    wf_client.schedule_new_workflow.return_value = "instance-1"  # type: ignore[method-assign]
 
     runner = AgentRunner(
         wf_client=wf_client,
