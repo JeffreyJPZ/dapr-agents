@@ -688,7 +688,9 @@ class _StreamSubscriber:
             pairs, (metadata or {}).get("type")
         )
 
-        any_hook = any(b.payload_filter or b.model_filter or b.mapper for b, _ in ordered_pairs)
+        any_hook = any(
+            b.payload_filter or b.model_filter or b.mapper for b, _ in ordered_pairs
+        )
         event = (
             EventMessageMetadata.model_validate(metadata or {}) if any_hook else None
         )
