@@ -15,20 +15,20 @@ kind: Reaction
 apiVersion: v1
 name: inventory-events-publisher
 spec:
-  kind: PostDaprPubSub
+  kind: DaprPubSubRouter
   queries:
     low-stock-event-query: >
       {
-        "pubsubName": "drasi-pubsub",
-        "topicName": "drasi-events-low-stock-event-query",
-        "format": "Unpacked",
-        "skipControlSignals": true
+        "inventory-agent": {
+          "pubsub": "drasi-pubsub",
+          "topic": "drasi-events-low-stock-event-query"
+        }
       }
-    
+
     critical-stock-event-query: >
       {
-        "pubsubName": "drasi-pubsub",
-        "topicName": "drasi-events-critical-stock-event-query",
-        "format": "Unpacked",
-        "skipControlSignals": true
+        "inventory-agent": {
+          "pubsub": "drasi-pubsub",
+          "topic": "drasi-events-critical-stock-event-query"
+        }
       }

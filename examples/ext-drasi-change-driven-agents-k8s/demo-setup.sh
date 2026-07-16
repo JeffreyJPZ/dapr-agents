@@ -98,12 +98,27 @@ install_drasi() {
     echo "=== Continuing with setup anyway... ==="
   fi
 
+  echo "=== Building local Drasi reactions... ==="
+  cd "${PROJECT_DIR}/../drasi-platform/reactions/dapr/pubsub-router"
+  make docker-build
+  cd "$BASE_DIR"
+
+  echo "=== Loading local Drasi images... ==="
+  cd "${PROJECT_DIR}/../drasi-platform"
+  make k3d-load CLUSTER_NAME=dapr-agents
+  cd "$BASE_DIR"
+
   echo "=== Installing Drasi... ==="
   install_with_retries \
     "Drasi" \
-    "drasi init --version 0.10.0" \
+    "drasi init --local --version latest" \
     "drasi uninstall -y" \
     3
+  
+  echo "=== Applying local Drasi reaction providers... ==="
+  cd "${PROJECT_DIR}/../drasi-platform/reactions/dapr/pubsub-router"
+  drasi apply -f reaction-provider.yaml
+  cd "$BASE_DIR"
 }
 
 install_redis() {
