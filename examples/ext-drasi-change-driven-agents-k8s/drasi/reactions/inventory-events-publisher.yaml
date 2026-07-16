@@ -17,18 +17,24 @@ name: inventory-events-publisher
 spec:
   kind: DaprPubSubRouter
   queries:
-    low-stock-event-query: >
+    low-stock-event-query: |
       {
         "inventory-agent": {
           "pubsub": "drasi-pubsub",
-          "topic": "drasi-events-low-stock-event-query"
+          "topic": "inventory-agent",
+          "added": {
+            "task": "Event: {{payload.source.queryId}} - {{op}}; Details: {{payload.after.productId}} - {{payload.after.productName}} - {{payload.after.productDescription}} - {{payload.after.stockOnHand}} - {{payload.after.lowStockThreshold}}"
+          }
         }
       }
 
-    critical-stock-event-query: >
+    critical-stock-event-query: |
       {
         "inventory-agent": {
           "pubsub": "drasi-pubsub",
-          "topic": "drasi-events-critical-stock-event-query"
+          "topic": "inventory-agent",
+          "added": {
+            "task": "Event: {{payload.source.queryId}} - {{op}}; Details: {{payload.after.productId}} - {{payload.after.productName}} - {{payload.after.productDescription}} - {{payload.after.stockOnHand}} - {{payload.after.lowStockThreshold}}"
+          }
         }
       }
