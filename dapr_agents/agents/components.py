@@ -29,6 +29,7 @@ from dapr_agents.agents.configs import (
     AgentRegistryConfig,
     AgentStateConfig,
     DEFAULT_AGENT_WORKFLOW_BUNDLE,
+    AgentTriggerConfig,
     RegistryIndexRetryConfig,
     WorkflowGrpcOptions,
     StateModelBundle,
@@ -57,6 +58,7 @@ class DaprInfra:
         self,
         *,
         name: str,
+        binding: Optional[AgentTriggerConfig] = None,
         pubsub: Optional[AgentPubSubConfig] = None,
         state: Optional[AgentStateConfig] = None,
         registry: Optional[AgentRegistryConfig] = None,
@@ -70,6 +72,7 @@ class DaprInfra:
 
         Args:
             name: Logical agent name; used for keys/topics when not overridden.
+            binding: Dapr binding configuration for this agent.
             pubsub: Dapr pub/sub configuration for this agent.
             state: Durable state (Dapr state store, key overrides, defaults, hooks).
             registry: Agent registry backing store and team settings.
@@ -81,6 +84,14 @@ class DaprInfra:
         """
         self.name = name
         self._workflow_grpc_options = workflow_grpc_options
+
+        # -----------------------------
+        # Binding configuration (copy)
+        # -----------------------------
+        self._binding: Optional[AgentTriggerConfig] = None
+        if binding is not None:
+            # Copy only what we need to avoid accidental external mutation.
+            self._binding = AgentTriggerConfig(binding_name=binding.binding_name)
 
         # -----------------------------
         # Pub/Sub configuration (copy)
@@ -159,6 +170,21 @@ class DaprInfra:
         )
         self._base_metadata = dict(base_metadata or {"contentType": "application/json"})
         self._max_etag_attempts = max_etag_attempts
+
+    # ------------------------------------------------------------------
+    # Binding helpers
+    # ------------------------------------------------------------------
+    @property
+    def binding(self) -> Optional[AgentTriggerConfig]:
+        """Return the configured binding settings, if any."""
+        return self._binding
+
+    @property
+    def binding_name(self) -> Optional[str]:
+        """Return the Dapr binding component name, or None if no binding configured."""
+        if not self._binding:
+            return None
+        return self._binding.binding_name
 
     # ------------------------------------------------------------------
     # Pub/Sub helpers

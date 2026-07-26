@@ -372,6 +372,17 @@ class AgentMemoryConfig:
 
 
 @dataclass
+class AgentTriggerConfig:
+    """Configuration for agent input bindings.
+
+    Attributes:
+        binding_name: Optional Dapr binding component name for trigger events.
+    """
+
+    binding_name: Optional[str] = None
+
+
+@dataclass
 class AgentPubSubConfig:
     """Declarative pub/sub configuration for durable agents.
 

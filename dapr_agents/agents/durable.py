@@ -51,6 +51,7 @@ from dapr_agents.agents.orchestrators.llm.utils import (
 from dapr_agents.agents.base import AgentBase
 from dapr_agents.agents.configs import (
     AgentMCPConfig,
+    AgentTriggerConfig,
     OrchestrationMode,
     ToolExecutionMode,
     AgentApprovalConfig,
@@ -224,6 +225,7 @@ class DurableAgent(AgentBase):
         system_prompt: Optional[str] = None,
         prompt_template: Optional[PromptTemplateBase] = None,
         # Infrastructure
+        binding: Optional[AgentTriggerConfig] = None,
         pubsub: Optional[AgentPubSubConfig] = None,
         state: Optional[AgentStateConfig] = None,
         registry: Optional[AgentRegistryConfig] = None,
@@ -257,6 +259,7 @@ class DurableAgent(AgentBase):
             system_prompt: System prompt override.
             prompt_template: Optional explicit prompt template instance.
 
+            binding: Optional Dapr input binding configuration for triggers.
             pubsub: Optional Dapr Pub/Sub configuration for triggers/broadcasts.
                 If omitted, the agent won't subscribe to any topics and can only be
                 triggered directly via AgentRunner.
@@ -301,6 +304,7 @@ class DurableAgent(AgentBase):
         ]
 
         super().__init__(
+            binding=binding,
             pubsub=pubsub,
             profile=profile,
             name=name,
@@ -360,6 +364,10 @@ class DurableAgent(AgentBase):
         self._wf_client: Optional[wf.DaprWorkflowClient] = (
             wf.DaprWorkflowClient() if (hooks and hooks.before_tool_call) else None
         )
+
+        # Register activation callback for binding trigger if configured
+        if self.binding:
+            self.add_activation(lambda _: None) # TODO: replace w/ binding callback
 
         # MCP auto-discovery state
         self._mcp_config: AgentMCPConfig = mcp or AgentMCPConfig()

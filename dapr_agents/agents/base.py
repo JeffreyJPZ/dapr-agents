@@ -50,6 +50,7 @@ from dapr_agents.agents.configs import (
     AgentStateConfig,
     AgentExecutionConfig,
     AgentTracingExporter,
+    AgentTriggerConfig,
     ConfigFieldDescriptor,
     RuntimeConfigKey,
     LLMMetadata,
@@ -301,6 +302,7 @@ class AgentBase:
         system_prompt: Optional[str] = None,
         prompt_template: Optional[PromptTemplateBase] = None,
         # Components (infrastructure)
+        binding: Optional[AgentTriggerConfig] = None,
         pubsub: Optional[AgentPubSubConfig] = None,
         state: Optional[AgentStateConfig] = None,
         registry: Optional[AgentRegistryConfig] = None,
@@ -333,6 +335,7 @@ class AgentBase:
             system_prompt: System prompt override.
             prompt_template: Optional explicit prompt template instance.
 
+            binding: Binding config used by `AgentComponents`.
             pubsub: Pub/Sub config used by `AgentComponents`.
             state: Durable state config used by `AgentComponents`.
             registry: Team registry config used by `AgentComponents`.
@@ -493,6 +496,12 @@ class AgentBase:
                                 "Failed to decode agent runtime configuration JSON. Using empty configuration."
                             )
                     if (
+                        "bindings" in component.type
+                        and component.name == "agent-trigger"
+                        and binding is None
+                    ):
+                        binding = AgentTriggerConfig(binding_name=component.name)
+                    if (
                         "pubsub" in component.type
                         and component.name == "agent-pubsub"
                         and pubsub is None
@@ -552,6 +561,7 @@ class AgentBase:
         # Wire infrastructure via DaprInfra (composition).
         self._infra = DaprInfra(
             name=self.name,
+            binding=binding,
             pubsub=pubsub,
             state=state,
             registry=registry,
@@ -1134,6 +1144,12 @@ class AgentBase:
         """Delegate to DaprInfra."""
         if hasattr(self, "_infra"):
             return self._infra.registry_state
+
+    @property
+    def binding_name(self):
+        """Delegate to DaprInfra."""
+        if hasattr(self, "_infra"):
+            return self._infra.binding_name
 
     @property
     def topic_name(self):
