@@ -216,6 +216,24 @@ wait_for_workloads_ready() {
   echo "=== All workloads ready! ==="
 }
 
+apply_drasi_resources() {
+  echo "=== Applying Drasi resources... ==="
+
+  drasi apply -f ./drasi/sources/products.yaml
+  drasi wait -f ./drasi/sources/products.yaml -t 120
+
+  drasi apply -f ./drasi/queries/critical-stock-event.yaml
+  drasi wait -f ./drasi/queries/critical-stock-event.yaml -t 120
+
+  drasi apply -f ./drasi/queries/low-stock-event.yaml
+  drasi wait -f ./drasi/queries/low-stock-event.yaml -t 120
+
+  drasi apply -f ./drasi/reactions/inventory-events-publisher.yaml
+  drasi wait -f ./drasi/reactions/inventory-events-publisher.yaml -t 120
+
+  echo "=== All Drasi resources ready! ==="
+}
+
 echo "=== Beginning setup... ==="
 
 init_cluster
@@ -233,6 +251,8 @@ create_secrets
 deploy_components
 deploy_apps
 wait_for_workloads_ready
+
+apply_drasi_resources
 
 echo "=== Setup complete! ==="
 echo "=== View the workflow dashboard at http://localhost:8080 ==="

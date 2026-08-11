@@ -19,22 +19,18 @@ spec:
   queries:
     low-stock-event-query: |
       {
-        "inventory-agent": {
-          "pubsub": "drasi-pubsub",
-          "topic": "inventory-agent",
-          "added": {
-            "task": "Event: {{payload.source.queryId}} - {{op}}; Details: {{payload.after.productId}} - {{payload.after.productName}} - {{payload.after.productDescription}} - {{payload.after.stockOnHand}} - {{payload.after.lowStockThreshold}}"
-          }
+        "name": "Low Stock",
+        "description": "This query detects when the stock on hand for a product falls below the low stock threshold.",
+        "added": {
+          "task": "Event: {{payload.source.queryId}} - {{op}}; Details: {{payload.after.productId}} - {{payload.after.productName}} - {{payload.after.productDescription}} - {{payload.after.stockOnHand}} - {{payload.after.lowStockThreshold}}"
         }
       }
 
     critical-stock-event-query: |
       {
-        "inventory-agent": {
-          "pubsub": "drasi-pubsub",
-          "topic": "inventory-agent",
-          "added": {
-            "task": "Event: {{payload.source.queryId}} - {{op}}; Details: {{payload.after.productId}} - {{payload.after.productName}} - {{payload.after.productDescription}} - {{payload.after.stockOnHand}} - {{payload.after.lowStockThreshold}}"
-          }
+        "name": "Critical Stock",
+        "description": "This query detects when the stock on hand for a product drops to zero.",
+        "added": {
+          "task": "Event: {{payload.source.queryId}} - {{op}}; Details: {{payload.after.productId}} - {{payload.after.productName}} - {{payload.after.productDescription}} - {{payload.after.stockOnHand}} - {{payload.after.lowStockThreshold}}"
         }
       }
