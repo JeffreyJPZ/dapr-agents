@@ -36,7 +36,9 @@ def make_task(event: DrasiChangeEvent, ctx: Any) -> TriggerAction:
         task=(
             f"You are an inventory agent that creates purchase orders, calculating the order quantity dynamically.\n"
             f"Create a purchase order for this '{event.payload.source.queryId}' event.\n"
-            f"Use the following data: {event.payload.after.model_dump_json()}.\n\n"
+            f"Use the following data:\n\n"
+            f"Stock before: {event.payload.before.model_dump_json() if event.payload.before else 'N/A'}.\n"
+            f"Stock after: {event.payload.after.model_dump_json() if event.payload.after else 'N/A'}.\n\n"
             "Respond with exactly the following format, and nothing else:\n\n"
             "Product ID: <productId>\n"
             "Product Name: <productName>\n"
@@ -60,13 +62,13 @@ async def main() -> None:
         agent,
         query_id="critical-stock-event-query",
         task_mapper=make_task,
-        operations="i",
+        operations=["i", "u", "d"],
     )
     drasi_trigger(
         agent,
         query_id="low-stock-event-query",
         task_mapper=make_task,
-        operations="i",
+        operations=["i", "u", "d"],
     )
 
     runner = AgentRunner()
