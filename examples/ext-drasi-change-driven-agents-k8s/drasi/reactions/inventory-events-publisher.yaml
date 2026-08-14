@@ -15,22 +15,16 @@ kind: Reaction
 apiVersion: v1
 name: inventory-events-publisher
 spec:
-  kind: DaprPubSubRouter
+  kind: DaprAgentRouter
   queries:
     low-stock-event-query: |
       {
-        "name": "Low Stock",
+        "title": "Low Stock Event",
         "description": "This query detects when the stock on hand for a product falls below the low stock threshold.",
-        "added": {
-          "task": "Event: {{payload.source.queryId}} - {{op}}; Details: {{payload.after.productId}} - {{payload.after.productName}} - {{payload.after.productDescription}} - {{payload.after.stockOnHand}} - {{payload.after.lowStockThreshold}}"
-        }
       }
 
     critical-stock-event-query: |
       {
-        "name": "Critical Stock",
+        "title": "Critical Stock Event",
         "description": "This query detects when the stock on hand for a product drops to zero.",
-        "added": {
-          "task": "Event: {{payload.source.queryId}} - {{op}}; Details: {{payload.after.productId}} - {{payload.after.productName}} - {{payload.after.productDescription}} - {{payload.after.stockOnHand}} - {{payload.after.lowStockThreshold}}"
-        }
       }

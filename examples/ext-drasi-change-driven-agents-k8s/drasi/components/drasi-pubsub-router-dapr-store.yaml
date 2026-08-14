@@ -14,7 +14,7 @@
 apiVersion: dapr.io/v1alpha1
 kind: Component
 metadata:
-  name: drasi-pubsub-router-store
+  name: drasi-agent-router-dapr-store
   namespace: drasi-system
 spec:
   type: state.redis

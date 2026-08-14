@@ -99,7 +99,7 @@ install_drasi() {
   fi
 
   echo "=== Building local Drasi reactions... ==="
-  cd "${PROJECT_DIR}/../drasi-platform/reactions/dapr/pubsub-router"
+  cd "${PROJECT_DIR}/../drasi-platform/reactions/dapr/agent-router"
   make docker-build
   cd "$BASE_DIR"
 
@@ -116,7 +116,7 @@ install_drasi() {
     3
   
   echo "=== Applying local Drasi reaction providers... ==="
-  cd "${PROJECT_DIR}/../drasi-platform/reactions/dapr/pubsub-router"
+  cd "${PROJECT_DIR}/../drasi-platform/reactions/dapr/agent-router"
   drasi apply -f reaction-provider.yaml
   cd "$BASE_DIR"
 }
