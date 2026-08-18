@@ -112,6 +112,8 @@ from dapr_agents.tool.mcp.dapr_workflow_client import mcp_tool_def_to_workflow_t
 
 logger = get_context_aware_logger(__name__)
 
+# Flag to enable/disable Drasi sleep + wake up
+DRASI_ENABLED = True  # TODO: remove this
 
 def _get_framework_from_registry(
     agent_name: str, infra: Optional[Any] = None
@@ -443,6 +445,14 @@ class DurableAgent(AgentBase):
         """Dapr-registered name of this agent's broadcast workflow."""
         return broadcast_workflow_id(self.name, infra=self._infra)
 
+    @property
+    def drasi_bridge_workflow_name(self) -> str:
+        """Dapr-registered name of this agent's experimental Drasi bridge workflow."""
+        return (
+            f"{DAPR_AGENTS_NAMESPACE}.{sanitize_openai_tool_name(self.name)}."
+            "drasi_bridge_workflow"
+        )
+
     # ------------------------------------------------------------------
     # Activation hooks (extension seam)
     # ------------------------------------------------------------------
@@ -607,16 +617,70 @@ class DurableAgent(AgentBase):
                         ctx.instance_id,
                     )
 
-                    assistant_response: Dict[str, Any] = yield ctx.call_activity(
-                        self._activity_name(self.call_llm),
-                        input={
-                            "task": task,
-                            "instance_id": ctx.instance_id,
-                            "time": ctx.current_utc_datetime.isoformat(),
-                            "source": source,
-                        },
-                        retry_policy=self._retry_policy,
-                    )
+                    # TODO: remove this once the bridge flow is finalized
+                    if DRASI_ENABLED:
+                        drasi_pre_response = yield ctx.call_activity(
+                            self._activity_name(self.drasi_pre_call_llm),
+                            input={
+                                "task": task,
+                                "instance_id": ctx.instance_id,
+                                "time": ctx.current_utc_datetime.isoformat(),
+                                "source": source,
+                            },
+                            retry_policy=self._retry_policy,
+                        )
+
+                        synthesized_message = (
+                            drasi_pre_response.get("synthesized_message")
+                            if isinstance(drasi_pre_response, dict)
+                            else None
+                        )
+                        if synthesized_message is not None:
+                            assistant_response = synthesized_message
+                        else:
+                            # Suspend until Drasi event comes in, then save it and call LLM with the event
+                            drasi_subscription_ids = yield ctx.call_activity(
+                                self._activity_name(self.get_drasi_subscriptions),
+                                input={"instance_id": ctx.instance_id},
+                                retry_policy=self._retry_policy,
+                            )
+                            if drasi_subscription_ids:
+                                drasi_event_task = ctx.wait_for_external_event(
+                                    "drasi_event"
+                                )
+                                yield drasi_event_task
+                                drasi_event = drasi_event_task.get_result()
+                                yield ctx.call_activity(
+                                    self._activity_name(self.save_drasi_event),
+                                    input={
+                                        "instance_id": ctx.instance_id,
+                                        "drasi_event": drasi_event,
+                                    },
+                                    retry_policy=self._retry_policy,
+                                )
+
+                            assistant_response = yield ctx.call_activity(
+                                self._activity_name(self.drasi_call_llm),
+                                input={
+                                    "task": task,
+                                    "instance_id": ctx.instance_id,
+                                    "time": ctx.current_utc_datetime.isoformat(),
+                                    "source": source,
+                                },
+                                retry_policy=self._retry_policy,
+                            )
+                    else:
+                        assistant_response = yield ctx.call_activity(
+                            self._activity_name(self.call_llm),
+                            input={
+                                "task": task,
+                                "instance_id": ctx.instance_id,
+                                "time": ctx.current_utc_datetime.isoformat(),
+                                "source": source,
+                            },
+                            retry_policy=self._retry_policy,
+                        )
+
                     tool_calls = assistant_response.get("tool_calls") or []
                     if tool_calls:
                         logger.debug(
@@ -1926,6 +1990,388 @@ class DurableAgent(AgentBase):
             source,
             session_id,
         )
+
+    # TODO: remove this experimental Drasi activity once the bridge flow is finalized
+    def get_drasi_subscriptions(
+        self, ctx: wf.WorkflowActivityContext, payload: Dict[str, Any]
+    ) -> List[str]:
+        """Return the Drasi subscription IDs tracked for this agent."""
+        if not self.state_store:
+            return []
+
+        agent_id = "inventory-agent"
+        try:
+            agent_state = self.state_store.load(key=agent_id, default={})
+        except Exception:
+            logger.exception(
+                "Failed to load Drasi subscription state for agent_id=%s",
+                "inventory-agent",
+            )
+            return []
+
+        if not isinstance(agent_state, dict):
+            return []
+
+        subscription_ids = agent_state.get("subscription_ids") or []
+        if not isinstance(subscription_ids, list):
+            return []
+
+        return [str(subscription_id) for subscription_id in subscription_ids if subscription_id]
+
+    # TODO: remove this experimental Drasi activity once the bridge flow is finalized
+    def save_drasi_event(
+        self, ctx: wf.WorkflowActivityContext, payload: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Persist the received Drasi event into the workflow message history."""
+        instance_id = payload.get("instance_id")
+        drasi_event = payload.get("event")
+        if not instance_id:
+            return {}
+
+        try:
+            entry = self._infra.get_state(instance_id)
+        except Exception:
+            logger.exception(
+                "Failed to get workflow state for instance_id: %s", instance_id
+            )
+            return {}
+
+        if entry is None or not hasattr(entry, "messages"):
+            return {}
+
+        if isinstance(drasi_event, (dict, list)):
+            event_content = json.dumps(
+                drasi_event, ensure_ascii=False, default=str
+            )
+        else:
+            event_content = str(drasi_event)
+
+        message_dict = {
+            "role": "user",
+            "content": f"[Drasi event] {event_content}",
+            "name": "drasi",
+        }
+        message_model = (
+            self._message_coercer(message_dict)
+            if getattr(self, "_message_coercer", None)
+            else self._message_dict_to_message_model(message_dict)
+        )
+        entry.messages.append(message_model)
+        if hasattr(entry, "last_message"):
+            entry.last_message = message_model
+
+        self.save_state(instance_id, entry=entry)
+        return {"saved": True}
+
+    # TODO: remove this helper once the bridge flow is finalized
+    def _drasi_prepare_llm_turn(
+        self,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Build the shared Drasi LLM request state and before-hook result."""
+        instance_id = payload.get("instance_id")
+        task = payload.get("task")
+        source = payload.get("source")
+        response_format_name = payload.get("response_format")
+
+        response_model = None
+        if response_format_name:
+            model_map = {
+                "IterablePlanStep": IterablePlanStep,
+                "NextStep": NextStep,
+                "ProgressCheckOutput": ProgressCheckOutput,
+            }
+            response_model = model_map.get(response_format_name)
+            if response_model is None:
+                logger.warning(
+                    "Unknown response_format '%s', ignoring", response_format_name
+                )
+
+        entry = self._infra.get_state(instance_id)
+
+        chat_history = self._reconstruct_conversation_history(instance_id, entry=entry)
+        messages = self.prompting_helper.build_initial_messages(
+            user_input=task,
+            chat_history=chat_history,
+        )
+
+        # Sync current system messages into per-instance state
+        self._sync_system_messages_with_state(instance_id, messages, entry=entry)
+
+        # Build generate kwargs. When the caller requested structured output
+        # AND the conversation isn't mid-tool-loop (no tool_calls on the last
+        # assistant message), omit tools/tool_choice so the model can't
+        # legitimately respond with a tool call instead of JSON.
+        last_assistant = next(
+            (
+                m
+                for m in reversed(messages)
+                if isinstance(m, dict) and m.get("role") == "assistant"
+            ),
+            None,
+        )
+        last_had_tool_calls = bool(last_assistant and last_assistant.get("tool_calls"))
+
+        tools = self.get_llm_tools()
+        generate_kwargs: Dict[str, Any] = {"messages": messages}
+        fresh_structured_turn: bool = (
+            response_model is not None and not last_had_tool_calls
+        )
+
+        if response_model is not None:
+            generate_kwargs["response_format"] = response_model
+
+        if tools and not fresh_structured_turn:
+            generate_kwargs["tools"] = tools
+            if self.execution.tool_choice is not None:
+                generate_kwargs["tool_choice"] = self.execution.tool_choice
+
+        # before_llm_call hook dispatch. Hooks fire inside this activity (rather
+        # than in the workflow body) so they can perform non-deterministic work
+        # like web search; the activity boundary records the final assistant
+        # message so replays use the recorded output rather than re-running the
+        # hook. First non-Proceed decision wins, mirroring before_tool_call.
+        before_llm_decision: Optional[HookDecision] = None
+        if self._hooks and self._hooks.before_llm_call:
+            hook_payload: Dict[str, Any] = dict(generate_kwargs)
+            if "messages" in hook_payload:
+                hook_payload["messages"] = list(hook_payload["messages"])
+            before_ctx = LLMHookContext(payload=hook_payload)
+            for hook in self._hooks.before_llm_call:
+                result = hook(before_ctx)
+                if result is not None and not isinstance(result, Proceed):
+                    before_llm_decision = result
+                    break
+
+        if isinstance(before_llm_decision, RequireApproval):
+            raise NotImplementedError(
+                "RequireApproval is not supported on before_llm_call. LLM hooks "
+                "run inside the call_llm activity so they can perform non-"
+                "deterministic work (e.g. web search). Workflow yields for "
+                "external approval require the deterministic workflow body, "
+                "where such hooks would not be replay-safe. Use RequireApproval "
+                "on before_tool_call for HITL on tool dispatch instead."
+            )
+
+        synthesized_message: Optional[Dict[str, Any]] = None
+        if isinstance(before_llm_decision, Skip):
+            skip_content = (
+                str(before_llm_decision.result)
+                if before_llm_decision.result is not None
+                else ""
+            )
+            synthesized_message = {"role": "assistant", "content": skip_content}
+        elif isinstance(before_llm_decision, Deny):
+            deny_reason = before_llm_decision.reason or "policy denial"
+            synthesized_message = {
+                "role": "assistant",
+                "content": f"LLM call blocked: {deny_reason}",
+            }
+        elif (
+            isinstance(before_llm_decision, Mutate)
+            and before_llm_decision.payload is not None
+        ):
+            # Shallow-merge so a hook can override just the keys it cares about
+            # (e.g. only `messages` for RAG) without dropping `tools`,
+            # `response_format`, or `tool_choice` from generate_kwargs.
+            generate_kwargs = {**generate_kwargs, **before_llm_decision.payload}
+
+        return {
+            "instance_id": instance_id,
+            "task": task,
+            "entry": entry,
+            "source": source,
+            "messages": messages,
+            "response_format_name": response_format_name,
+            "response_model": response_model,
+            "generate_kwargs": generate_kwargs,
+            "synthesized_message": synthesized_message,
+        }
+
+    # TODO: remove this helper once the bridge flow is finalized
+    def _drasi_record_user_message(
+        self,
+        instance_id: str,
+        task: Optional[str],
+        messages: List[Dict[str, Any]],
+        source: Optional[str],
+        *,
+        entry: Any,
+    ) -> None:
+        """Persist the user turn for the Drasi LLM path."""
+        if not task:
+            return
+
+        user_message = self._get_last_user_message(messages)
+        user_copy = dict(user_message) if user_message else None
+        self._process_user_message(
+            instance_id, task, user_copy, entry=entry, skip_save=True
+        )
+
+        # Skip printing for orchestrators' internal LLM calls
+        if user_copy is not None and not self.orchestrator:
+            self.text_formatter.print_message(
+                self._label_message_with_source(user_copy, source)
+            )
+
+    # TODO: remove this helper once the bridge flow is finalized
+    def _drasi_finalize_assistant_message(
+        self,
+        instance_id: str,
+        assistant_message: Dict[str, Any],
+        *,
+        generate_kwargs: Dict[str, Any],
+        entry: Any,
+    ) -> Dict[str, Any]:
+        """Apply after-hooks, persist the assistant message, and checkpoint."""
+        # after_llm_call hook dispatch. Receives a copy of the built
+        # assistant_message and may return Mutate(payload=<replacement dict>) to
+        # replace it before persistence. Skip / Deny / RequireApproval are no-ops
+        # on the after-path since the LLM has already produced output. Hooks
+        # receive a shallow copy so in-place mutation cannot bypass the Mutate
+        # contract.
+        if self._hooks and self._hooks.after_llm_call:
+            after_payload: Dict[str, Any] = dict(generate_kwargs)
+            if "messages" in after_payload:
+                after_payload["messages"] = list(after_payload["messages"])
+            after_ctx = LLMHookContext(payload=after_payload)
+            for hook in self._hooks.after_llm_call:
+                result = hook(after_ctx, dict(assistant_message))
+                if isinstance(result, Mutate) and result.payload is not None:
+                    assistant_message = result.payload
+                    break
+
+        self._save_assistant_message(
+            instance_id, assistant_message, entry=entry, skip_save=True
+        )
+        # Skip printing for orchestrators' internal LLM calls
+        if not self.orchestrator:
+            self.text_formatter.print_message(assistant_message)
+        # Single save for the entire activity
+        self.save_state(instance_id, entry=entry)
+        return assistant_message
+
+    # TODO: remove this experimental Drasi activity once the bridge flow is finalized
+    def drasi_pre_call_llm(
+        self,
+        ctx: wf.WorkflowActivityContext,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Prepare a Drasi LLM turn before the external event wait."""
+        prepared = self._drasi_prepare_llm_turn(payload)
+        instance_id = prepared["instance_id"]
+        task = prepared["task"]
+        entry = prepared["entry"]
+        source = prepared["source"]
+        messages = prepared["messages"]
+        generate_kwargs = prepared["generate_kwargs"]
+        synthesized_message = prepared["synthesized_message"]
+
+        if synthesized_message is not None:
+            self._drasi_record_user_message(
+                instance_id,
+                task,
+                messages,
+                source,
+                entry=entry,
+            )
+            assistant_message = self._drasi_finalize_assistant_message(
+                instance_id,
+                synthesized_message,
+                generate_kwargs=generate_kwargs,
+                entry=entry,
+            )
+            return {"synthesized_message": assistant_message}
+
+        self.save_state(instance_id, entry=entry)
+        return {"generate_kwargs": generate_kwargs}
+
+    # TODO: remove this experimental Drasi activity once the bridge flow is finalized
+    def drasi_call_llm(
+        self,
+        ctx: wf.WorkflowActivityContext,
+        payload: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Run the Drasi LLM call after the external event arrives."""
+        prepared = self._drasi_prepare_llm_turn(payload)
+        instance_id = prepared["instance_id"]
+        task = prepared["task"]
+        entry = prepared["entry"]
+        source = prepared["source"]
+        messages = prepared["messages"]
+        response_format_name = prepared["response_format_name"]
+        response_model = prepared["response_model"]
+        generate_kwargs = prepared["generate_kwargs"]
+        synthesized_message = prepared["synthesized_message"]
+
+        if synthesized_message is not None:
+            self._drasi_record_user_message(
+                instance_id,
+                task,
+                messages,
+                source,
+                entry=entry,
+            )
+            assistant_message = self._drasi_finalize_assistant_message(
+                instance_id,
+                synthesized_message,
+                generate_kwargs=generate_kwargs,
+                entry=entry,
+            )
+            return assistant_message
+
+        self._drasi_record_user_message(
+            instance_id,
+            task,
+            messages,
+            source,
+            entry=entry,
+        )
+
+        try:
+            response = self.llm.generate(**generate_kwargs)
+        except Exception as exc:  # noqa: BLE001
+            if response_model is not None:
+                provider = getattr(self.llm, "provider", "unknown")
+                model_name = getattr(self.llm, "model", "unknown")
+                raise AgentError(
+                    f"LLM structured-output call failed (schema="
+                    f"{response_format_name!r}, provider={provider!r}, "
+                    f"model={model_name!r}, agent={self.name!r}): {exc}"
+                ) from exc
+            raise AgentError(str(exc)) from exc
+
+        if response_model is not None:
+            if hasattr(response, "model_dump"):
+                content = json.dumps(response.model_dump())
+            else:
+                content = json.dumps(response)
+
+            assistant_message = {
+                "role": "assistant",
+                "content": content,
+            }
+        else:
+            assistant_message = response.get_message()
+            if assistant_message is None:
+                raise AgentError("LLM returned no assistant message.")
+            assistant_message = assistant_message.model_dump()
+
+        return self._drasi_finalize_assistant_message(
+            instance_id,
+            assistant_message,
+            generate_kwargs=generate_kwargs,
+            entry=entry,
+        )
+
+    # TODO: remove this experimental Drasi bridge workflow once the bridge flow is finalized
+    @message_router(
+        pubsub="agent-pubsub",  # TODO: make this configurable
+        topic="drasi-events-low-stock-event-query",  # TODO: make this configurable
+    )
+    def drasi_bridge_workflow(self, ctx: wf.DaprWorkflowContext, message: dict):
+        """Claims an inbox for incoming Drasi pub/sub messages and routes them to the waiting workflow."""
+        ctx.raise_workflow_event("drasi_event", message)
 
     def call_llm(
         self,
@@ -3464,6 +3910,16 @@ class DurableAgent(AgentBase):
             self.load_tools,
         )
 
+    # TODO: remove this experimental Drasi activity bundle once the bridge flow is finalized
+    def _drasi_activities(self) -> tuple[Callable[..., Any], ...]:
+        """Activities used only by the experimental Drasi bridge flow."""
+        return (
+            self.get_drasi_subscriptions,
+            self.save_drasi_event,
+            self.drasi_pre_call_llm,
+            self.drasi_call_llm,
+        )
+
     def _agent_orchestration_activities(self) -> tuple[Callable[..., Any], ...]:
         """Extra activities for plan-based (LLM-driven) orchestration."""
         return (self.validate_step, self.evaluate_progress, self.save_plan)
@@ -3517,11 +3973,26 @@ class DurableAgent(AgentBase):
                 self._named(self.on_broadcast, self.broadcast_workflow_name)
             )
 
+        # TODO: remove this experimental Drasi runtime wiring once the bridge flow is finalized
+        if DRASI_ENABLED:
+            runtime.register_workflow(
+                self._named(
+                    self.drasi_bridge_workflow, self.drasi_bridge_workflow_name
+                )
+            )
+
         # Standard agent activities, all scoped per agent
         for activity in self._standard_activities():
             runtime.register_activity(
                 self._named(activity, self._activity_name(activity))
             )
+
+        # TODO: remove this experimental Drasi runtime wiring once the bridge flow is finalized
+        if DRASI_ENABLED:
+            for activity in self._drasi_activities():
+                runtime.register_activity(
+                    self._named(activity, self._activity_name(activity))
+                )
 
         # Internal orchestration workflow and activities
         if self._orchestration_strategy:
