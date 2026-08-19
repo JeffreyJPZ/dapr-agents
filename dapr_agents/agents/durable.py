@@ -2001,7 +2001,7 @@ class DurableAgent(AgentBase):
 
         agent_id = "inventory-agent"
         try:
-            agent_state = self.state_store.load(key=agent_id, default={})
+            agent_state = self.state_store.load(key=f"drasi_subscriptions_{agent_id}", default={})
         except Exception:
             logger.exception(
                 "Failed to load Drasi subscription state for agent_id=%s",

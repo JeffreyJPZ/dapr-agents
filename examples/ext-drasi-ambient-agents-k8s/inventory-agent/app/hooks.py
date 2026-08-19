@@ -27,7 +27,7 @@ from dapr_agents.hooks import (
 AGENT_MEMORY_COMPONENT = os.getenv("AGENT_MEMORY_COMPONENT", "agent-memory")
 AGENT_ID = "inventory-agent"
 SUBSCRIPTION_ID = "low-stock-event-query"
-SUBSCRIPTIONS_KEY_PREFIX = "drasi-subscriptions"
+SUBSCRIPTIONS_KEY_PREFIX = "drasi_subscriptions"
 SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX = "subscription_instructions_"
 
 
@@ -52,10 +52,9 @@ def _read_state_value(response: object) -> object | None:
         return text
 
 
-def wait_for_drasi_event(ctx: LLMHookContext) -> HookDecision:
+def inject_drasi_event_handling_instructions(ctx: LLMHookContext) -> HookDecision:
     """
-    Injects instructions for Drasi events
-    and determines whether to wait for a Drasi event (currently runs if any subscription exists).
+    Injects instructions for handling Drasi events.
     """
     messages = ctx.payload.get("messages", [])
     if not messages:
@@ -109,7 +108,7 @@ def wait_for_drasi_event(ctx: LLMHookContext) -> HookDecision:
 
 def inject_subscribe_tool_params(ctx: ToolHookContext) -> HookDecision:
     """Inject the Drasi subscribe tool parameters into the LLM context."""
-    if ctx.step_name != "subscribe":
+    if ctx.step_name != "subscribe_drasi_query":
         return Proceed()
 
     new_payload = dict(ctx.payload)
@@ -134,7 +133,7 @@ def inject_subscribe_tool_params(ctx: ToolHookContext) -> HookDecision:
 
             client.save_state(
                 store_name=AGENT_MEMORY_COMPONENT,
-                key=f"drasi-events-{AGENT_ID}",
+                key=f"{SUBSCRIPTIONS_KEY_PREFIX}{AGENT_ID}",
                 value=json.dumps(agent_state),
                 state_metadata={"contentType": "application/json"},
             )
