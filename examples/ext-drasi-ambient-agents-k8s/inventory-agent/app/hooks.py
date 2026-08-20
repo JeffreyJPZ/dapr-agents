@@ -114,37 +114,38 @@ def inject_subscribe_tool_params(ctx: ToolHookContext) -> HookDecision:
     new_payload = dict(ctx.payload)
 
     # Persist instructions for the LLM so it knows how to act on the Drasi event
-    instructions = new_payload.get("instructions")
-    if instructions is not None:
-        with DaprClient() as client:
-            agent_raw_state = client.get_state(store_name=AGENT_MEMORY_COMPONENT, key=f"{SUBSCRIPTIONS_KEY_PREFIX}{AGENT_ID}")
-            agent_state = _read_state_value(agent_raw_state)
-            if not isinstance(agent_state, dict):
-                agent_state = {}
+    # instructions = new_payload.get("instructions")
+    # if instructions is not None:
+    #     with DaprClient() as client:
+    #         agent_raw_state = client.get_state(store_name=AGENT_MEMORY_COMPONENT, key=f"{SUBSCRIPTIONS_KEY_PREFIX}{AGENT_ID}")
+    #         agent_state = _read_state_value(agent_raw_state)
+    #         if not isinstance(agent_state, dict):
+    #             agent_state = {}
 
-            # TODO: subscription id should be persisted after tool call but currently not supported
-            # ok for now since we only have one subscription
-            subscription_ids = agent_state.get("subscription_ids")
-            if not isinstance(subscription_ids, list):
-                subscription_ids = []
-            if SUBSCRIPTION_ID not in subscription_ids:
-                subscription_ids.append(SUBSCRIPTION_ID)
-            agent_state["subscription_ids"] = subscription_ids
+    #         # TODO: subscription id should be persisted after tool call but currently not supported
+    #         # ok for now since we only have one subscription
+    #         subscription_ids = agent_state.get("subscription_ids")
+    #         if not isinstance(subscription_ids, list):
+    #             subscription_ids = []
+    #         if SUBSCRIPTION_ID not in subscription_ids:
+    #             subscription_ids.append(SUBSCRIPTION_ID)
+    #         agent_state["subscription_ids"] = subscription_ids
 
-            client.save_state(
-                store_name=AGENT_MEMORY_COMPONENT,
-                key=f"{SUBSCRIPTIONS_KEY_PREFIX}{AGENT_ID}",
-                value=json.dumps(agent_state),
-                state_metadata={"contentType": "application/json"},
-            )
-            client.save_state(
-                store_name=AGENT_MEMORY_COMPONENT,
-                key=f"{SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX}{SUBSCRIPTION_ID}",
-                value=json.dumps({"instructions": instructions}),
-                state_metadata={"contentType": "application/json"},
-            )
+    #         client.save_state(
+    #             store_name=AGENT_MEMORY_COMPONENT,
+    #             key=f"{SUBSCRIPTIONS_KEY_PREFIX}{AGENT_ID}",
+    #             value=json.dumps(agent_state),
+    #             state_metadata={"contentType": "application/json"},
+    #         )
+    #         client.save_state(
+    #             store_name=AGENT_MEMORY_COMPONENT,
+    #             key=f"{SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX}{SUBSCRIPTION_ID}",
+    #             value=json.dumps({"instructions": instructions}),
+    #             state_metadata={"contentType": "application/json"},
+    #         )
 
     # Scrub instructions as they are an internal detail
+    # TODO: should the agent's instructions be updated with this?
     new_payload.pop("instructions", None)
 
     # Inject the agent ID and topic into the tool call payload
