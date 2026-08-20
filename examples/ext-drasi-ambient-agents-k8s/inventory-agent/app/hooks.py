@@ -108,12 +108,12 @@ def inject_drasi_event_handling_instructions(ctx: LLMHookContext) -> HookDecisio
 
 def inject_subscribe_tool_params(ctx: ToolHookContext) -> HookDecision:
     """Inject the Drasi subscribe tool parameters into the LLM context."""
-    if ctx.step_name != "subscribe_drasi_query":
+    if ctx.step_name != "drasi-agent-router-mcp_subscribe_drasi_query":
         return Proceed()
 
     new_payload = dict(ctx.payload)
 
-    # Persist instructions for the LLM so it knows how to act on the Drasi event
+    # TODO: update agent instructions so it knows how to act on the Drasi event and can hot-reload
     # instructions = new_payload.get("instructions")
     # if instructions is not None:
     #     with DaprClient() as client:
@@ -145,7 +145,6 @@ def inject_subscribe_tool_params(ctx: ToolHookContext) -> HookDecision:
     #         )
 
     # Scrub instructions as they are an internal detail
-    # TODO: should the agent's instructions be updated with this?
     new_payload.pop("instructions", None)
 
     # Inject the agent ID and topic into the tool call payload
