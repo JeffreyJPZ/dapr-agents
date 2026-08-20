@@ -1,8 +1,8 @@
 apiVersion: dapr.io/v1alpha1
 kind: MCPServer
 metadata:
-  name: my-mcp-server
+  name: agent-mcp
 spec:
   endpoint:
     streamableHTTP:
-      url: http://localhost:3500/v1.0/invoke/inventory-events-publisher-DaprAgentRouter.drasi-system/method/mcp
+      url: http://inventory-events-publisher-reaction.drasi-system.svc.cluster.local:8000/mcp

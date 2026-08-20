@@ -39,6 +39,8 @@ spec:
         env:
         - name: AGENT_CONVERSATION_COMPONENT
           value: "agent-llm"
+        - name: AGENT_MCP_COMPONENT
+          value: "agent-mcp"
         - name: AGENT_MEMORY_COMPONENT
           value: "agent-memory"
         - name: AGENT_RUNTIME_COMPONENT

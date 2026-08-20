@@ -197,7 +197,12 @@ load_secrets() {
 deploy_components() {
   echo "=== Deploying Dapr components... ==="
   kubectl apply -f "${BASE_DIR}/drasi/components/"
-  kubectl apply -f "${BASE_DIR}/inventory-agent/components/"
+  kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-llm.yaml"
+  # TODO: may want to switch to MCPServer
+  # kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-mcp.yaml"
+  kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-memory.yaml"
+  kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-pubsub.yaml"
+  kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-runtime.yaml"
   echo "=== Dapr components deployed successfully! ==="
 }
 
@@ -231,7 +236,7 @@ apply_drasi_resources() {
   drasi apply -f ./drasi/reactions/inventory-events-publisher.yaml
   drasi wait -f ./drasi/reactions/inventory-events-publisher.yaml -t 120
 
-  echo "=== All Drasi resources ready! ==="
+  echo "=== All Drasi resources applied successfully! ==="
 }
 
 echo "=== Beginning setup... ==="

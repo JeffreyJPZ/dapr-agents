@@ -113,7 +113,7 @@ from dapr_agents.tool.mcp.dapr_workflow_client import mcp_tool_def_to_workflow_t
 logger = get_context_aware_logger(__name__)
 
 # Flag to enable/disable Drasi sleep + wake up
-DRASI_ENABLED = True  # TODO: remove this
+DRASI_ENABLED = False  # TODO: remove this
 
 def _get_framework_from_registry(
     agent_name: str, infra: Optional[Any] = None

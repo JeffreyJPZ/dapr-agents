@@ -59,6 +59,6 @@ def make_agent(tools: list[Any] | None = None, hooks: Hooks | None = None) -> Du
         state=AgentStateConfig(
             store=StateStoreService(store_name=AGENT_RUNTIME_COMPONENT),
         ),
-        execution=AgentExecutionConfig(max_iterations=1),
+        execution=AgentExecutionConfig(max_iterations=10),
         hooks=hooks,
     )
