@@ -156,7 +156,7 @@ async def _load_mcp_tools_from_client() -> list[AgentTool]:
     try:
         await client.connect_streamable_http(
             server_name="drasi-agent-router-mcp",
-            url=f"http://localhost:{DAPR_HTTP_PORT}/v1.0/invoke/inventory-events-publisher-DaprAgentRouter.drasi-system/method/mcp",
+            url=f"http://localhost:{DAPR_HTTP_PORT}/v1.0/invoke/inventory-events-publisher-reaction.drasi-system/method/mcp",
         )
         tools = client.get_all_tools()
         tools = _sanitize_drasi_mcp_tools_from_client(tools)
