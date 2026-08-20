@@ -32,17 +32,17 @@ RUN --mount=type=cache,target=/root/.cache/uv \
     --mount=type=bind,source=uv.lock,target=uv.lock \
     --mount=type=bind,source=pyproject.toml,target=pyproject.toml \
     --mount=type=bind,source=ext/dapr-agents-ext-drasi,target=ext/dapr-agents-ext-drasi,rw \
-    uv sync --frozen --no-install-project --package ext-drasi-change-driven-agents-k8s
+    uv sync --frozen --no-install-project --package ext-drasi-ambient-agents-k8s
 
 COPY uv.lock pyproject.toml .
 COPY dapr_agents ./dapr_agents
 COPY ext/dapr-agents-ext-drasi ./ext/dapr-agents-ext-drasi
 
-COPY examples/ext-drasi-change-driven-agents-k8s/inventory-agent/app .
+COPY examples/ext-drasi-ambient-agents-k8s/inventory-agent/app .
 
 # Build wheel and install it into the virtual environment
 RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --frozen --no-editable --package ext-drasi-change-driven-agents-k8s
+    uv sync --frozen --no-editable --package ext-drasi-ambient-agents-k8s
 
 # ------------------------------------------
 # Runtime stage
@@ -55,6 +55,7 @@ WORKDIR /app
 COPY --from=build /app/.venv .venv
 COPY --from=build /app/agent.py .
 COPY --from=build /app/app.py .
+COPY --from=build /app/hooks.py .
 
 ENV PATH="/app/.venv/bin:$PATH"
 
