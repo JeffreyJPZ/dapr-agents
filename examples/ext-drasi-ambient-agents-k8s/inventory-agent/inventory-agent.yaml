@@ -37,6 +37,8 @@ spec:
         image: local-registry:5000/inventory-agent:latest
         imagePullPolicy: Always
         env:
+        - name: AGENT_CONFIGURATION_COMPONENT
+          value: "agent-configuration"
         - name: AGENT_CONVERSATION_COMPONENT
           value: "agent-llm"
         - name: AGENT_MCP_COMPONENT

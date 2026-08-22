@@ -197,6 +197,7 @@ load_secrets() {
 deploy_components() {
   echo "=== Deploying Dapr components... ==="
   kubectl apply -f "${BASE_DIR}/drasi/components/"
+  kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-configuration.yaml"
   kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-llm.yaml"
   # TODO: may want to switch to MCPServer
   # kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-mcp.yaml"

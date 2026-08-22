@@ -23,14 +23,12 @@ from dapr.ext.workflow.mcp_schema import create_pydantic_model_from_schema
 
 from dapr_agents import AgentRunner
 from dapr_agents.agents.schemas import TriggerAction
-from dapr_agents.hooks import Hooks
 from dapr_agents.tool.base import AgentTool
 from dapr_agents.tool.mcp import MCPClient
 
 from dapr_agents.ext.drasi import DrasiChangeEvent, drasi_trigger
 
 from agent import make_agent
-from hooks import inject_subscribe_tool_params, inject_drasi_event_handling_instructions
 
 logging.basicConfig(level=logging.INFO)
 
@@ -62,7 +60,7 @@ def make_task(event: DrasiChangeEvent, ctx: Any) -> TriggerAction:
         )
     )
 
-
+# TODO: figure out how to support MCPServer resource
 # TODO: this should be internal
 # def _sanitize_drasi_mcp_tools_from_mcpserver(tools: list[MCPToolDef]) -> list[MCPToolDef]:
 #     """Adjust the Drasi MCP tool schemas used."""
@@ -145,7 +143,7 @@ def _sanitize_drasi_mcp_tools_from_client(tools: list[AgentTool]) -> list[AgentT
             required = []
             input_schema["required"] = required
 
-        if tool.name == "subscribe_drasi_query":
+        if tool.name == "drasi-agent-router-mcp_subscribe_drasi_query":
             properties["instructions"] = {
                 "type": "string",
                 "description": (
@@ -160,11 +158,10 @@ def _sanitize_drasi_mcp_tools_from_client(tools: list[AgentTool]) -> list[AgentT
             if "instructions" not in required:
                 required.append("instructions")
 
-        if tool.name == "subscribe_drasi_query":
             properties.pop("topic", None)
             properties.pop("agent_id", None)
             required[:] = [field for field in required if field not in {"topic", "agent_id"}]
-        elif tool.name == "unsubscribe_drasi_query":
+        elif tool.name == "drasi-agent-router-mcp_unsubscribe_drasi_query":
             properties.pop("agent_id", None)
             properties.pop("subscription_id", None)
             required[:] = [
@@ -208,13 +205,7 @@ def main() -> None:
 
     asyncio.set_event_loop(asyncio.new_event_loop())
 
-    agent = make_agent(
-        tools=tools,
-        hooks=Hooks(
-        #     before_llm_call=[inject_drasi_event_handling_instructions],
-            before_tool_call=[inject_subscribe_tool_params],
-        ),
-    )
+    agent = make_agent(tools=tools)
 
     # Register Drasi query subscriptions
     # TODO: we don't want static subscriptions, events should arrive through the agent's inbox

@@ -11,6 +11,7 @@
 # limitations under the License.
 #
 
+import logging
 import os
 from typing import Any
 
@@ -18,19 +19,28 @@ from dapr_agents import DurableAgent, DaprChatClient
 from dapr_agents.agents.configs import (
     AgentExecutionConfig,
     AgentMemoryConfig,
+    AgentProfileConfig,
     AgentPubSubConfig,
     AgentStateConfig,
+    RuntimeConfigKey,
+    RuntimeSubscriptionConfig,
 )
 from dapr_agents.hooks import Hooks
 from dapr_agents.memory import ConversationDaprStateMemory
 from dapr_agents.storage.daprstores.stateservice import StateStoreService
 
+from hooks import inject_subscribe_tool_params
+
+logger = logging.getLogger(__name__)
+
+AGENT_CONFIGURATION_COMPONENT = os.getenv(
+    "AGENT_CONFIGURATION_COMPONENT", "agent-configuration"
+)
 AGENT_CONVERSATION_COMPONENT = os.getenv("AGENT_CONVERSATION_COMPONENT", "agent-llm")
 AGENT_PUBSUB_COMPONENT = os.getenv("AGENT_PUBSUB_COMPONENT", "agent-pubsub")
 AGENT_MEMORY_COMPONENT = os.getenv("AGENT_MEMORY_COMPONENT", "agent-memory")
 AGENT_RUNTIME_COMPONENT = os.getenv("AGENT_RUNTIME_COMPONENT", "agent-runtime")
 
-# TODO: update instructions
 INSTRUCTIONS = [
     "You are an expert inventory replenishment and procurement assistant.",
     "You operate in an event-driven environment where stock-related events trigger your behavior.",
@@ -41,12 +51,31 @@ INSTRUCTIONS = [
 ]
 
 
-def make_agent(tools: list[Any] | None = None, hooks: Hooks | None = None) -> DurableAgent:
-    return DurableAgent(
+def _on_config_change(key: str, value: Any) -> None:
+    """Callback invoked after each successful config update."""
+    logger.info(f"Configuration changed: {key} = {value}")
+
+
+def _agent_profile() -> AgentProfileConfig:
+    """Build the base agent persona, including a tagged slot for Drasi updates."""
+    return AgentProfileConfig(
         name="InventoryAgent",
         role="Expert procurement assistant capable of reacting to stock events",
         goal="Create purchase orders for stock based on stock events.",
-        instructions=INSTRUCTIONS,
+        instructions=[
+            *INSTRUCTIONS,
+            "<drasi-instructions>",
+            "Drasi-generated instructions will be inserted here.",
+            "</drasi-instructions>",
+        ],
+    )
+
+
+def make_agent(
+    tools: list[Any] | None = None,
+) -> DurableAgent:
+    return DurableAgent(
+        profile=_agent_profile(),
         llm=DaprChatClient(component_name=AGENT_CONVERSATION_COMPONENT),
         tools=tools,
         memory=AgentMemoryConfig(
@@ -59,6 +88,14 @@ def make_agent(tools: list[Any] | None = None, hooks: Hooks | None = None) -> Du
         state=AgentStateConfig(
             store=StateStoreService(store_name=AGENT_RUNTIME_COMPONENT),
         ),
+        configuration=RuntimeSubscriptionConfig(
+            store_name=AGENT_CONFIGURATION_COMPONENT,
+            keys=[RuntimeConfigKey.AGENT_INSTRUCTIONS],
+            on_config_change=_on_config_change,
+        ),
         execution=AgentExecutionConfig(max_iterations=10),
-        hooks=hooks,
+        hooks=Hooks(
+        #     before_llm_call=[inject_drasi_event_handling_instructions],
+            before_tool_call=[inject_subscribe_tool_params],
+        ),
     )

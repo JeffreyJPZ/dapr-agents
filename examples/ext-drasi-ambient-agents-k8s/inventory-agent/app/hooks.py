@@ -12,6 +12,7 @@
 #
 
 import json
+import logging
 import os
 
 from dapr.clients import DaprClient
@@ -24,8 +25,16 @@ from dapr_agents.hooks import (
     ToolHookContext,
 )
 
-AGENT_MEMORY_COMPONENT = os.getenv("AGENT_MEMORY_COMPONENT", "agent-memory")
+logger = logging.getLogger(__name__)
+
+AGENT_CONFIGURATION_COMPONENT = os.getenv(
+    "AGENT_CONFIGURATION_COMPONENT", "agent-configuration"
+)
+
 AGENT_ID = "inventory-agent"
+AGENT_INSTRUCTIONS_KEY = "agent_instructions"
+AGENT_DRASI_INSTRUCTIONS_START_TAG = "<drasi-instructions>"
+AGENT_DRASI_INSTRUCTIONS_END_TAG = "</drasi-instructions>"
 SUBSCRIPTION_ID = "low-stock-event-query"
 SUBSCRIPTIONS_KEY_PREFIX = "drasi_subscriptions"
 SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX = "subscription_instructions_"
@@ -52,58 +61,129 @@ def _read_state_value(response: object) -> object | None:
         return text
 
 
-def inject_drasi_event_handling_instructions(ctx: LLMHookContext) -> HookDecision:
-    """
-    Injects instructions for handling Drasi events.
-    """
-    messages = ctx.payload.get("messages", [])
-    if not messages:
-        return Proceed()
-
-    # Get instructions keyed by agent ID (TODO: should be obtained from the runtime)
+def _write_state_value(store_name: str, key: str, value: object) -> None:
+    """Persist a JSON-serializable value through Dapr state."""
     with DaprClient() as client:
-        agent_state = _read_state_value(
-            client.get_state(store_name=AGENT_MEMORY_COMPONENT, key=f"{SUBSCRIPTIONS_KEY_PREFIX}{AGENT_ID}")
+        client.save_state(
+            store_name=store_name,
+            key=key,
+            value=json.dumps(value),
+            state_metadata={"contentType": "application/json"},
         )
 
-        if not isinstance(agent_state, dict):
-            return Proceed()
 
-        subscription_ids = agent_state.get("subscription_ids")
-        if not isinstance(subscription_ids, list) or not subscription_ids:
-            return Proceed()
+def _load_instructions_from_store(store_name: str, key: str) -> list[str]:
+    """Load the current agent instructions from the config store."""
+    with DaprClient() as client:
+        raw_state = client.get_state(store_name=store_name, key=key)
+    state_value = _read_state_value(raw_state)
+    if isinstance(state_value, dict):
+        instructions = state_value.get("instructions")
+        if isinstance(instructions, list):
+            return [str(item) for item in instructions]
+        if isinstance(instructions, str):
+            return [line for line in instructions.splitlines() if line.strip()]
+        return []
+    if isinstance(state_value, list):
+        return [str(item) for item in state_value]
+    if isinstance(state_value, str):
+        return [line for line in state_value.splitlines() if line.strip()]
+    return []
 
-        # TODO: replace this, this is ok for now since we only assume one subscription
-        subscription_id = subscription_ids[0]
-        if not subscription_id:
-            return Proceed()
 
-        instruction_raw_state = client.get_state(
-            store_name=AGENT_MEMORY_COMPONENT,
-            key=f"{SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX}{subscription_id}",
-        )
-        instruction_state = _read_state_value(instruction_raw_state)
-
-    if isinstance(instruction_state, dict):
-        instructions = instruction_state.get("instructions")
+def _serialize_instructions(
+    instructions: list[str], generated_instructions: object
+) -> list[str]:
+    """Replace or append the Drasi instruction block."""
+    if isinstance(generated_instructions, list):
+        generated_text = "\n".join(str(item) for item in generated_instructions)
+    elif isinstance(generated_instructions, str):
+        generated_text = generated_instructions
     else:
-        instructions = instruction_state
+        generated_text = json.dumps(generated_instructions, ensure_ascii=False)
+    generated_lines = [
+        line for line in generated_text.splitlines() if line.strip()
+    ]
 
-    if not instructions:
-        return Proceed()
+    start_index = None
+    end_index = None
+    for index, line in enumerate(instructions):
+        if line.strip() == AGENT_DRASI_INSTRUCTIONS_START_TAG:
+            start_index = index
+        if line.strip() == AGENT_DRASI_INSTRUCTIONS_END_TAG:
+            end_index = index
+            break
 
-    # Enrich messages with instructions for how to handle Drasi events
-    messages.append(
-        {
-            "role": "system",
-            "content": (
-                "Use the following instructions for the Drasi subscription:\n\n"
-                f"{instructions}"
-            ),
-        }
-    )
+    if start_index is None or end_index is None or end_index <= start_index:
+        return [
+            *instructions,
+            AGENT_DRASI_INSTRUCTIONS_START_TAG,
+            *generated_lines,
+            AGENT_DRASI_INSTRUCTIONS_END_TAG,
+        ]
 
-    return Mutate(payload={"messages": messages})
+    return [
+        *instructions[: start_index + 1],
+        *generated_lines,
+        *instructions[end_index:],
+    ]
+
+
+# def inject_drasi_event_handling_instructions(ctx: LLMHookContext) -> HookDecision:
+#     """
+#     Injects instructions for handling Drasi events.
+#     """
+#     messages = ctx.payload.get("messages", [])
+#     if not messages:
+#         return Proceed()
+
+#     # Get instructions keyed by agent ID (TODO: should be obtained from the runtime)
+#     with DaprClient() as client:
+#         agent_state = _read_state_value(
+#             client.get_state(
+#                 store_name=AGENT_MEMORY_COMPONENT,
+#                 key=f"{SUBSCRIPTIONS_KEY_PREFIX}{AGENT_ID}",
+#             )
+#         )
+
+#         if not isinstance(agent_state, dict):
+#             return Proceed()
+
+#         subscription_ids = agent_state.get("subscription_ids")
+#         if not isinstance(subscription_ids, list) or not subscription_ids:
+#             return Proceed()
+
+#         # TODO: replace this, this is ok for now since we only assume one subscription
+#         subscription_id = subscription_ids[0]
+#         if not subscription_id:
+#             return Proceed()
+
+#         instruction_raw_state = client.get_state(
+#             store_name=AGENT_MEMORY_COMPONENT,
+#             key=f"{SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX}{subscription_id}",
+#         )
+#         instruction_state = _read_state_value(instruction_raw_state)
+
+#     if isinstance(instruction_state, dict):
+#         instructions = instruction_state.get("instructions")
+#     else:
+#         instructions = instruction_state
+
+#     if not instructions:
+#         return Proceed()
+
+#     # Enrich messages with instructions for how to handle Drasi events
+#     messages.append(
+#         {
+#             "role": "system",
+#             "content": (
+#                 "Use the following instructions for the Drasi subscription:\n\n"
+#                 f"{instructions}"
+#             ),
+#         }
+#     )
+
+#     return Mutate(payload={"messages": messages})
 
 
 def inject_subscribe_tool_params(ctx: ToolHookContext) -> HookDecision:
@@ -113,38 +193,38 @@ def inject_subscribe_tool_params(ctx: ToolHookContext) -> HookDecision:
 
     new_payload = dict(ctx.payload)
 
-    # TODO: update agent instructions so it knows how to act on the Drasi event and can hot-reload
-    # instructions = new_payload.get("instructions")
-    # if instructions is not None:
-    #     with DaprClient() as client:
-    #         agent_raw_state = client.get_state(store_name=AGENT_MEMORY_COMPONENT, key=f"{SUBSCRIPTIONS_KEY_PREFIX}{AGENT_ID}")
-    #         agent_state = _read_state_value(agent_raw_state)
-    #         if not isinstance(agent_state, dict):
-    #             agent_state = {}
+    # TODO: this should be from the runtime
+    configuration_store_name = AGENT_CONFIGURATION_COMPONENT
+    instructions = new_payload.get("instructions")
 
-    #         # TODO: subscription id should be persisted after tool call but currently not supported
-    #         # ok for now since we only have one subscription
-    #         subscription_ids = agent_state.get("subscription_ids")
-    #         if not isinstance(subscription_ids, list):
-    #             subscription_ids = []
-    #         if SUBSCRIPTION_ID not in subscription_ids:
-    #             subscription_ids.append(SUBSCRIPTION_ID)
-    #         agent_state["subscription_ids"] = subscription_ids
+    logger.info(
+        f"Injecting Drasi subscription tool parameters for agent '{AGENT_ID}' with instructions: {instructions}"
+    )
 
-    #         client.save_state(
-    #             store_name=AGENT_MEMORY_COMPONENT,
-    #             key=f"{SUBSCRIPTIONS_KEY_PREFIX}{AGENT_ID}",
-    #             value=json.dumps(agent_state),
-    #             state_metadata={"contentType": "application/json"},
-    #         )
-    #         client.save_state(
-    #             store_name=AGENT_MEMORY_COMPONENT,
-    #             key=f"{SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX}{SUBSCRIPTION_ID}",
-    #             value=json.dumps({"instructions": instructions}),
-    #             state_metadata={"contentType": "application/json"},
-    #         )
+    if instructions is not None:
+        current_instructions = _load_instructions_from_store(configuration_store_name, AGENT_INSTRUCTIONS_KEY)
 
-    # Scrub instructions as they are an internal detail
+        logger.info(
+            f"Current agent instructions in store '{configuration_store_name}' for key '{AGENT_INSTRUCTIONS_KEY}': {current_instructions}"
+        )
+        
+        updated_instructions = _serialize_instructions(
+            current_instructions, instructions
+        )
+
+        logger.info(
+            f"Updating agent instructions in store '{configuration_store_name}' for key '{AGENT_INSTRUCTIONS_KEY}' with updated instructions: {updated_instructions}"
+        )
+
+        _write_state_value(
+            configuration_store_name, AGENT_INSTRUCTIONS_KEY, updated_instructions
+        )
+
+        logger.info(
+            f"Agent instructions updated successfully in store '{configuration_store_name}' for key '{AGENT_INSTRUCTIONS_KEY}'."
+        )
+
+    # Remove instructions as they are an internal detail
     new_payload.pop("instructions", None)
 
     # Inject the agent ID and topic into the tool call payload
