@@ -13,11 +13,13 @@
 
 from __future__ import annotations
 
+import asyncio
+import inspect
+import uuid
 from copy import deepcopy
 from typing import Any, Callable, Type
-import uuid
 
-from pydantic import BaseModel, Field, PrivateAttr, create_model
+from pydantic import BaseModel, PrivateAttr, create_model
 
 from dapr.ext.workflow.mcp_schema import create_pydantic_model_from_schema
 
@@ -68,59 +70,68 @@ def _clone_schema_with_instructions(
     )
 
 
-class DrasiWorkflowTool(WorkflowContextInjectedTool):
-    """Workflow tool wrapper that injects Drasi runtime details for subscriptions."""
+class DrasiTool(WorkflowContextInjectedTool):
+    """Tool wrapper that injects workflow context for Drasi subscriptions."""
 
-    # TODO: remove agent_name once registered agent workflow name is available
-    agent_name: str
-    topic: str
-
+    _topic: str
     _validation_args_model: Type[BaseModel] | None = PrivateAttr(default=None)
-
-    def __init__(
-        self,
-        name: str,
-        description: str,
-        agent_name: str,
-        topic: str,
-        func: Callable[..., Any] | None = None,
-        args_model: Type[BaseModel] | None = None,
-    ) -> None:
-        super().__init__(
-            name=name,
-            description=description,
-            func=func,
-            args_model=args_model,
-        )
-        self.agent_name = agent_name
-        self.topic = topic
 
     # TODO: should this be in activation instead?
     # TODO: support unsubscribe
     @classmethod
     def from_agent_tool(
         cls,
-        agent_tool: AgentTool,
-        **kwargs,
-    ) -> "DrasiWorkflowTool":
-        """Build a Drasi workflow tool from an existing AgentTool."""
-        # Create two separate models: one for validation (the original schema) and one for the exposed schema (with instructions added).
-        validation_args_model = agent_tool.args_model or create_model(
-            f"{agent_tool.name}Args"
+        tool: AgentTool,
+        topic: str,
+    ) -> "DrasiTool":
+        """Build a Drasi tool from an existing AgentTool."""
+        # Create two separate models: one for validation (the original schema)
+        # and one for the exposed schema (with instructions added).
+        validation_args_model = tool.args_model or create_model(
+            f"{tool.name}Args"
         )
         exposed_args_model = _clone_schema_with_instructions(validation_args_model)
 
-        tool = cls(
-            name=agent_tool.name,
-            description=agent_tool.description,
-            agent_name=kwargs.get("agent_name"),
-            topic=kwargs.get("topic"),
-            func=agent_tool.func or agent_tool._run,
+        # Tool function should not be ``None``
+        assert tool.func is not None, "AgentTool must have a callable func to create a DrasiTool"
+        drasi_tool = cls(
+            name=tool.name,
+            description=tool.description,
+            func=cls._make_drasi_tool_func(tool.func),
             args_model=exposed_args_model,
-            source=getattr(agent_tool, "source", "mcp"),
+            source=tool.source,
         )
-        tool._validation_args_model = validation_args_model
-        return tool
+        # TODO: move this to post-init?
+        drasi_tool._is_async = inspect.iscoroutinefunction(drasi_tool.func)
+        drasi_tool._topic = topic
+        drasi_tool._validation_args_model = validation_args_model
+
+        return drasi_tool
+
+    @classmethod
+    def _make_drasi_tool_func(cls, func: Callable[..., Any]) -> Callable[..., Any]:
+        """
+        Strip hidden kwargs on ``WorkflowContextInjectedTool`` before calling the tool function.
+        Must return a sync callable as workflow context injected tools are not awaited.
+        """
+        def _clean_kwargs(kwargs: dict[str, Any]) -> dict[str, Any]:
+            cleaned_kwargs = dict(kwargs)
+            cleaned_kwargs.pop("ctx", None)  # Can't use the context_kwarg field here
+            cleaned_kwargs.pop("_source_agent", None)
+            cleaned_kwargs.pop("_child_instance_id", None)
+            return cleaned_kwargs
+
+        if inspect.iscoroutinefunction(func):
+            def wrapped(*args: Any, **kwargs: Any) -> Any:
+                cleaned_kwargs = _clean_kwargs(kwargs)
+                return asyncio.run(func(*args, **cleaned_kwargs))
+
+            return wrapped
+
+        def wrapped(*args: Any, **kwargs: Any) -> Any:
+            return func(*args, **_clean_kwargs(kwargs))
+
+        return wrapped
 
     def _validate_and_prepare_args(
         self, func: Callable[..., Any], *args: Any, **kwargs: Any
@@ -152,9 +163,13 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
             self.args_model = exposed_args_model
 
         # Inject agent_id and subscription_id from runtime
-        # TODO: replace with registered agent workflow name
-        prepared_kwargs["agent_id"] = f"dapr.agents.{self.agent_name}.workflow"
+        assert prepared_kwargs.get("_source_agent") is not None, (
+            "DrasiTool requires '_source_agent' to be provided in kwargs"
+        )
+        # TODO: make this configurable
+        prepared_kwargs["agent_id"] = prepared_kwargs.get("_source_agent")
         # TODO: replace with context.new_guid() when available for replay safety
         prepared_kwargs["subscription_id"] = uuid.uuid4()
-        prepared_kwargs["topic"] = self.topic
+        prepared_kwargs["topic"] = self._topic
+
         return prepared_kwargs
