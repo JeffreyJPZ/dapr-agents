@@ -318,7 +318,9 @@ class TestApplyConfigMap:
             ),
         }
 
-        with pytest.raises(RuntimeError, match="bad"):
+        with pytest.raises(
+            RuntimeError, match="Could not apply setter for key 'value'"
+        ):
             apply_config_map(target, config_field_map)
 
     def test_apply_config_map_uses_fallback_on_error(self):

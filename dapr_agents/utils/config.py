@@ -36,7 +36,7 @@ class ConfigFieldDescriptor:
             Defaults to ``None``.
         validator: Optional idempotent callable ``(value) -> Any`` to validate/transform the coerced value.
             Defaults to ``None`` (no validation).
-        raise_on_error: If ``True``, raises an exception if mapping fails.
+        raise_on_error: If ``True``, propagates exceptions if mapping fails.
             Otherwise, logs a warning and uses the fallback value.
             Defaults to ``True`` (raise).
         fallback: Default value to apply if mapping fails and ``raise_on_error`` is ``False``.
@@ -109,12 +109,10 @@ def apply_config_update(
         # Apply via setter callback
         try:
             descriptor.setter(target_obj, processed_value)
-        except (AttributeError, TypeError):
-            raise RuntimeError(
-                f"Could not apply setter for key '{key}' (likely read-only)."
-            )
+        except Exception as exc:
+            raise RuntimeError(f"Could not apply setter for key '{key}'") from exc
         return processed_value
-    except (ValueError, RuntimeError, AttributeError, TypeError) as exc:
+    except (ValueError, RuntimeError) as exc:
         if descriptor.raise_on_error:
             raise
 
@@ -125,9 +123,10 @@ def apply_config_update(
         logger.debug(f"Using fallback value for key '{key}': {descriptor.fallback!r}")
         try:
             descriptor.setter(target_obj, descriptor.fallback)
-        except (AttributeError, TypeError, RuntimeError):
+        except Exception:
             logger.debug(
-                f"Failed to apply fallback for key '{key}', continuing without update."
+                f"Failed to apply fallback for key '{key}', continuing without update",
+                exc_info=True,
             )
         return descriptor.fallback
 
@@ -160,8 +159,8 @@ def process_config_update(
     if value is None and descriptor.getter:
         try:
             value = descriptor.getter()
-        except Exception as e:
-            raise ValueError(f"Unable to retrieve value for key '{key}': {e}.")
+        except Exception as exc:
+            raise ValueError(f"Unable to retrieve value for key '{key}'") from exc
 
     # Type coercion
     try:
@@ -170,15 +169,15 @@ def process_config_update(
             processed_value = None
         else:
             processed_value = coerce_config_value(value, descriptor.target_type)
-    except (ValueError, TypeError) as e:
-        raise ValueError(f"Invalid value for key '{key}': {e}.")
+    except Exception as exc:
+        raise ValueError(f"Invalid value for key '{key}'") from exc
 
     # Validation/transformation
     if processed_value is not None and descriptor.validator:
         try:
             processed_value = descriptor.validator(processed_value)
-        except Exception as e:
-            raise ValueError(f"Validation failed for key '{key}': {e}.")
+        except Exception as exc:
+            raise ValueError(f"Validation failed for key '{key}'") from exc
 
     return processed_value
 
