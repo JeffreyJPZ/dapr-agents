@@ -1842,11 +1842,12 @@ class AgentBase:
 
     def _setup_agent_observability(self) -> None:
         """Setup agent runtime configuration."""
-        config = self._agent_observability
         self._otel_logging_handler = None
 
-        if config.enabled:
-            tracer_provider, logger_provider = self._build_otel_providers(config)
+        if self._agent_observability.enabled:
+            tracer_provider, logger_provider = self._build_otel_providers(
+                self._agent_observability
+            )
 
             if logger_provider is not None:
                 _logs.set_logger_provider(logger_provider)
