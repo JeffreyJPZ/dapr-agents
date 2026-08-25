@@ -597,25 +597,23 @@ class AgentExecutionConfig:
     builtin_tools: List[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
-        # Treat None as an empty list to support template configs.
-        if self.builtin_tools is None:
-            self.builtin_tools = []
-
-        # Validate builtin_tools up-front so a typo fails at config time with a
-        # clear message instead of being silently skipped when tools are
-        # registered later. Accepts BuiltinTool members and raw strings (for
-        # declarative config) and normalizes both to the plain string value.
-        valid = {tool.value for tool in BuiltinTool}
-        normalized: List[str] = []
-        for name in self.builtin_tools:
-            value = str(name)
-            if value not in valid:
-                raise ValueError(
-                    f"Unknown builtin tool {value!r} in builtin_tools. "
-                    f"Valid values: {sorted(valid)}."
-                )
-            normalized.append(value)
-        self.builtin_tools = normalized
+        # Accept explicit ``builtin_tools=None`` for template configs, skipping validation.
+        if self.builtin_tools is not None:
+            # Validate builtin_tools up-front so a typo fails at config time with a
+            # clear message instead of being silently skipped when tools are
+            # registered later. Accepts BuiltinTool members and raw strings (for
+            # declarative config) and normalizes both to the plain string value.
+            valid = {tool.value for tool in BuiltinTool}
+            normalized: List[str] = []
+            for name in self.builtin_tools:
+                value = str(name)
+                if value not in valid:
+                    raise ValueError(
+                        f"Unknown builtin tool {value!r} in builtin_tools. "
+                        f"Valid values: {sorted(valid)}."
+                    )
+                normalized.append(value)
+            self.builtin_tools = normalized
 
     @classmethod
     def from_env(cls) -> "AgentExecutionConfig":
