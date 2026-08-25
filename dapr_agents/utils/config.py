@@ -33,14 +33,17 @@ class ConfigFieldDescriptor:
         target_type: Expected Python type for the coerced value.
         setter: Callable ``(obj, value) -> None`` that applies the value after coercion and validation.
         getter: Optional callable ``() -> Any`` that retrieves the value before coercion.
+            Defaults to ``None``.
         validator: Optional idempotent callable ``(value) -> Any`` to validate/transform the coerced value.
+            Defaults to ``None`` (no validation).
         raise_on_error: If ``True``, raises an exception if mapping fails.
-            If ``False``, logs a warning and uses the fallback value.
+            Otherwise, logs a warning and uses the fallback value.
             Defaults to ``True`` (raise).
-        fallback: Value to use if mapping fails or when a default baseline value is needed. Defaults to ``None``.
-        sensitive: If ``True``, the value is redacted in log output.
-        rebuilds_prompt: If ``True``, the prompt template is rebuilt after update.
-        triggers_otel_reload: If ``True``, triggers an OpenTelemetry configuration reload after update.
+        fallback: Default value to apply if mapping fails and ``raise_on_error`` is ``False``.
+            Defaults to ``None``.
+        sensitive: (Used for hot-reloading) If ``True``, the value is redacted in log output.
+        rebuilds_prompt: (Used for hot-reloading) If ``True``, the prompt template is rebuilt after update.
+        triggers_otel_reload: (Used for hot-reloading) If ``True``, triggers an OpenTelemetry configuration reload after update.
     """
 
     target_type: type
