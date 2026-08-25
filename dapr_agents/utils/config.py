@@ -34,10 +34,10 @@ class ConfigFieldDescriptor:
         setter: Callable ``(obj, value) -> None`` that applies the value after coercion and validation.
         getter: Optional callable ``() -> Any`` that retrieves the value before coercion.
         validator: Optional idempotent callable ``(value) -> Any`` to validate/transform the coerced value.
-        should_raise: If ``True``, raises an exception on failure to process or apply a value.
+        raise_on_error: If ``True``, raises an exception if mapping fails.
             If ``False``, logs a warning and uses the fallback value.
             Defaults to ``True`` (raise).
-        fallback: Value to use if mapping fails or when a default baseline value is needed. Defaults to None.
+        fallback: Value to use if mapping fails or when a default baseline value is needed. Defaults to ``None``.
         sensitive: If ``True``, the value is redacted in log output.
         rebuilds_prompt: If ``True``, the prompt template is rebuilt after update.
         triggers_otel_reload: If ``True``, triggers an OpenTelemetry configuration reload after update.
@@ -47,7 +47,7 @@ class ConfigFieldDescriptor:
     setter: Callable[..., None]
     getter: Callable[[], Any] | None = None
     validator: Callable[..., Any] | None = None
-    should_raise: bool = True
+    raise_on_error: bool = True
     fallback: Any = None
     sensitive: bool = False
     rebuilds_prompt: bool = False
@@ -112,7 +112,7 @@ def apply_config_update(
             )
         return processed_value
     except (ValueError, RuntimeError, AttributeError, TypeError) as exc:
-        if descriptor.should_raise:
+        if descriptor.raise_on_error:
             raise
 
         if descriptor.fallback is None:

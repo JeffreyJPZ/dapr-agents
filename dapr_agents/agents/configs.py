@@ -630,7 +630,7 @@ class AgentExecutionConfig:
                 setter=lambda obj, v: setattr(obj, "max_iterations", v),
                 getter=lambda: getenv("MAX_ITERATIONS"),
                 validator=validate_max_iterations,
-                should_raise=False,
+                raise_on_error=False,
             ),
             EnvConfigKey.TOOL_CHOICE: ConfigFieldDescriptor(
                 target_type=Optional[
@@ -645,7 +645,7 @@ class AgentExecutionConfig:
                 setter=lambda obj, v: setattr(obj, "tool_execution_mode", v),
                 getter=lambda: getenv("TOOL_EXECUTION_MODE"),
                 validator=validate_tool_execution_mode,
-                should_raise=False,
+                raise_on_error=False,
             ),
             EnvConfigKey.MAX_GRPC_INBOUND_MESSAGE_SIZE_BYTES: ConfigFieldDescriptor(
                 target_type=Optional[int],
@@ -653,7 +653,7 @@ class AgentExecutionConfig:
                     obj, "max_grpc_inbound_message_size_bytes", v
                 ),
                 getter=lambda: getenv("DAPR_MAX_GRPC_INBOUND_MESSAGE_SIZE_BYTES"),
-                should_raise=False,
+                raise_on_error=False,
             ),
             # TODO: support orchestration_mode from env
         }
@@ -755,7 +755,7 @@ class AgentExecutionConfig:
                 setter=lambda obj, v: setattr(obj, "max_iterations", v),
                 getter=lambda: runtime_config.get("MAX_ITERATIONS"),
                 validator=validate_max_iterations,
-                should_raise=False,
+                raise_on_error=False,
             ),
             RuntimeConfigKey.TOOL_CHOICE: ConfigFieldDescriptor(
                 target_type=Optional[str],
@@ -1004,55 +1004,55 @@ class AgentObservabilityConfig:
                 validator=lambda v: (
                     v if v is None else not v
                 ),  # Invert the disabled flag to set enabled
-                should_raise=False,
+                raise_on_error=False,
             ),
             EnvConfigKey.OTEL_EXPORTER_OTLP_HEADERS: ConfigFieldDescriptor(
                 target_type=Optional[str],
                 setter=lambda obj, v: setattr(obj, "headers", v),
                 getter=lambda: getenv("OTEL_EXPORTER_OTLP_HEADERS"),
                 validator=parse_header_string,
-                should_raise=False,
+                raise_on_error=False,
             ),
             EnvConfigKey.OTEL_EXPORTER_OTLP_ENDPOINT: ConfigFieldDescriptor(
                 target_type=Optional[str],
                 setter=lambda obj, v: setattr(obj, "endpoint", v),
                 getter=lambda: getenv("OTEL_EXPORTER_OTLP_ENDPOINT"),
                 validator=validate_non_empty_string,
-                should_raise=False,
+                raise_on_error=False,
             ),
             EnvConfigKey.OTEL_SERVICE_NAME: ConfigFieldDescriptor(
                 target_type=Optional[str],
                 setter=lambda obj, v: setattr(obj, "service_name", v),
                 getter=lambda: getenv("OTEL_SERVICE_NAME"),
                 validator=validate_non_empty_string,
-                should_raise=False,
+                raise_on_error=False,
             ),
             EnvConfigKey.OTEL_LOGGING_ENABLED: ConfigFieldDescriptor(
                 target_type=Optional[bool],
                 setter=lambda obj, v: setattr(obj, "logging_enabled", v),
                 getter=lambda: getenv("OTEL_LOGGING_ENABLED"),
-                should_raise=False,
+                raise_on_error=False,
             ),
             EnvConfigKey.OTEL_LOGS_EXPORTER: ConfigFieldDescriptor(
                 target_type=Optional[AgentLoggingExporter],
                 setter=lambda obj, v: setattr(obj, "logging_exporter", v),
                 getter=lambda: getenv("OTEL_LOGS_EXPORTER"),
                 validator=validate_otel_exporter_logging,
-                should_raise=False,
+                raise_on_error=False,
                 fallback=AgentLoggingExporter.CONSOLE,
             ),
             EnvConfigKey.OTEL_TRACING_ENABLED: ConfigFieldDescriptor(
                 target_type=Optional[bool],
                 setter=lambda obj, v: setattr(obj, "tracing_enabled", v),
                 getter=lambda: getenv("OTEL_TRACING_ENABLED"),
-                should_raise=False,
+                raise_on_error=False,
             ),
             EnvConfigKey.OTEL_TRACES_EXPORTER: ConfigFieldDescriptor(
                 target_type=Optional[AgentTracingExporter],
                 setter=lambda obj, v: setattr(obj, "tracing_exporter", v),
                 getter=lambda: getenv("OTEL_TRACES_EXPORTER"),
                 validator=validate_otel_exporter_tracing,
-                should_raise=False,
+                raise_on_error=False,
                 fallback=AgentTracingExporter.CONSOLE,
             ),
         }
@@ -1159,7 +1159,7 @@ class AgentObservabilityConfig:
                 validator=lambda v: (
                     v if v is None else not v
                 ),  # Invert the disabled flag to set enabled
-                should_raise=False,
+                raise_on_error=False,
             ),
             RuntimeConfigKey.OTEL_EXPORTER_OTLP_HEADERS: ConfigFieldDescriptor(
                 target_type=Optional[str],
@@ -1167,48 +1167,48 @@ class AgentObservabilityConfig:
                 setter=lambda obj, v: setattr(obj, "auth_token", v),
                 getter=lambda: runtime_config.get("OTEL_EXPORTER_OTLP_HEADERS"),
                 validator=validate_non_empty_string,
-                should_raise=False,
+                raise_on_error=False,
             ),
             RuntimeConfigKey.OTEL_EXPORTER_OTLP_ENDPOINT: ConfigFieldDescriptor(
                 target_type=Optional[str],
                 setter=lambda obj, v: setattr(obj, "endpoint", v),
                 getter=lambda: runtime_config.get("OTEL_EXPORTER_OTLP_ENDPOINT"),
                 validator=validate_non_empty_string,
-                should_raise=False,
+                raise_on_error=False,
             ),
             RuntimeConfigKey.OTEL_SERVICE_NAME: ConfigFieldDescriptor(
                 target_type=Optional[str],
                 setter=lambda obj, v: setattr(obj, "service_name", v),
                 getter=lambda: runtime_config.get("OTEL_SERVICE_NAME"),
                 validator=validate_non_empty_string,
-                should_raise=False,
+                raise_on_error=False,
             ),
             RuntimeConfigKey.OTEL_LOGGING_ENABLED: ConfigFieldDescriptor(
                 target_type=Optional[bool],
                 setter=lambda obj, v: setattr(obj, "logging_enabled", v),
                 getter=lambda: runtime_config.get("OTEL_LOGGING_ENABLED"),
-                should_raise=False,
+                raise_on_error=False,
             ),
             RuntimeConfigKey.OTEL_LOGS_EXPORTER: ConfigFieldDescriptor(
                 target_type=Optional[AgentLoggingExporter],
                 setter=lambda obj, v: setattr(obj, "logging_exporter", v),
                 getter=lambda: runtime_config.get("OTEL_LOGS_EXPORTER"),
                 validator=validate_otel_exporter_logging,
-                should_raise=False,
+                raise_on_error=False,
                 fallback=AgentLoggingExporter.CONSOLE,
             ),
             RuntimeConfigKey.OTEL_TRACING_ENABLED: ConfigFieldDescriptor(
                 target_type=Optional[bool],
                 setter=lambda obj, v: setattr(obj, "tracing_enabled", v),
                 getter=lambda: runtime_config.get("OTEL_TRACING_ENABLED"),
-                should_raise=False,
+                raise_on_error=False,
             ),
             RuntimeConfigKey.OTEL_TRACES_EXPORTER: ConfigFieldDescriptor(
                 target_type=Optional[AgentTracingExporter],
                 setter=lambda obj, v: setattr(obj, "tracing_exporter", v),
                 getter=lambda: runtime_config.get("OTEL_TRACES_EXPORTER"),
                 validator=validate_otel_exporter_tracing,
-                should_raise=False,
+                raise_on_error=False,
                 fallback=AgentTracingExporter.CONSOLE,
             ),
         }

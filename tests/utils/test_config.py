@@ -237,7 +237,7 @@ class TestApplyConfigUpdate:
             setter=lambda obj, value: setattr(obj, "value", value),
             getter=lambda: "not-a-number",
             fallback=99,
-            should_raise=False,
+            raise_on_error=False,
         )
 
         result = apply_config_update(
@@ -258,7 +258,7 @@ class TestApplyConfigUpdate:
             setter=setter,
             getter=lambda: "7",
             fallback=77,
-            should_raise=False,
+            raise_on_error=False,
         )
 
         result = apply_config_update(
@@ -330,7 +330,7 @@ class TestApplyConfigMap:
                 getter=lambda: "not-a-number",
                 setter=lambda obj, value: setattr(obj, "value", value),
                 fallback=99,
-                should_raise=False,
+                raise_on_error=False,
             ),
         }
 
