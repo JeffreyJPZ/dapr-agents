@@ -101,9 +101,7 @@ def _serialize_instructions(
         generated_text = generated_instructions
     else:
         generated_text = json.dumps(generated_instructions, ensure_ascii=False)
-    generated_lines = [
-        line for line in generated_text.splitlines() if line.strip()
-    ]
+    generated_lines = [line for line in generated_text.splitlines() if line.strip()]
 
     start_index = None
     end_index = None
@@ -202,12 +200,14 @@ def inject_subscribe_tool_params(ctx: ToolHookContext) -> HookDecision:
     )
 
     if instructions is not None:
-        current_instructions = _load_instructions_from_store(configuration_store_name, AGENT_INSTRUCTIONS_KEY)
+        current_instructions = _load_instructions_from_store(
+            configuration_store_name, AGENT_INSTRUCTIONS_KEY
+        )
 
         logger.info(
             f"Current agent instructions in store '{configuration_store_name}' for key '{AGENT_INSTRUCTIONS_KEY}': {current_instructions}"
         )
-        
+
         updated_instructions = _serialize_instructions(
             current_instructions, instructions
         )

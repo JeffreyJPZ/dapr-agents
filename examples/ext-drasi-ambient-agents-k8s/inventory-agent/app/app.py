@@ -18,9 +18,6 @@ import logging
 import os
 from typing import Any
 
-from dapr.ext.workflow import DaprMCPClient, MCPToolDef
-from dapr.ext.workflow.mcp_schema import create_pydantic_model_from_schema
-
 from dapr_agents import AgentRunner
 from dapr_agents.agents.schemas import TriggerAction
 from dapr_agents.tool.base import AgentTool
@@ -29,12 +26,14 @@ from dapr_agents.tool.mcp import MCPClient
 from dapr_agents.ext.drasi import DrasiChangeEvent, drasi_trigger
 
 from agent import make_agent
+from tools import DrasiWorkflowTool
 
 logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger(__name__)
 
-AGENT_MCP_COMPONENT = os.getenv("AGENT_MCP_COMPONENT", "agent-mcp")
+AGENT_NAME = os.getenv("AGENT_NAME", "InventoryAgent")
+AGENT_PUBSUB_COMPONENT = os.getenv("AGENT_PUBSUB_COMPONENT", "agent-pubsub")
 DAPR_HTTP_PORT = os.getenv("DAPR_HTTP_PORT", "3500")
 
 
@@ -60,120 +59,6 @@ def make_task(event: DrasiChangeEvent, ctx: Any) -> TriggerAction:
         )
     )
 
-# TODO: figure out how to support MCPServer resource
-# TODO: this should be internal
-# def _sanitize_drasi_mcp_tools_from_mcpserver(tools: list[MCPToolDef]) -> list[MCPToolDef]:
-#     """Adjust the Drasi MCP tool schemas used."""
-#     for tool in tools:
-#         input_schema = tool.input_schema
-#         if not isinstance(input_schema, dict):
-#             continue
-
-#         properties = input_schema.get("properties")
-#         if not isinstance(properties, dict):
-#             properties = {}
-#             input_schema["properties"] = properties
-
-#         required = input_schema.get("required")
-#         if not isinstance(required, list):
-#             required = []
-#             input_schema["required"] = required
-
-#         # TODO: remove
-#         if tool.name == "subscribe_drasi_query":
-#             properties["instructions"] = {
-#                 "type": "string",
-#                 "description": (
-#                     "Detailed, agent-authored instructions for what should happen "
-#                     "after this Drasi subscription fires and a Drasi event is received."
-#                     "Be specific about the desired follow-up action, the relevant context, "
-#                     "and any global rules, constraints, or thresholds "
-#                     "you should remember when handling the event later. "
-#                     "Write it as durable guidance for your future self, "
-#                     "not as a short label."
-#                 ),
-#             }
-#             if "instructions" not in required:
-#                 required.append("instructions")
-
-#         if tool.name == "subscribe_drasi_query":
-#             properties.pop("topic", None)
-#             properties.pop("agent_id", None)
-#             required[:] = [field for field in required if field not in {"topic", "agent_id"}]
-#         elif tool.name == "unsubscribe_drasi_query":
-#             properties.pop("agent_id", None)
-#             properties.pop("subscription_id", None)
-#             required[:] = [
-#                 field for field in required if field not in {"agent_id", "subscription_id"}
-#             ]
-
-#     return tools
-
-
-# async def _load_mcp_tools_from_mcpserver() -> list[MCPToolDef]:
-#     client = DaprMCPClient()
-#     try:
-#         await client.connect(AGENT_MCP_COMPONENT)
-#         tools = _sanitize_drasi_mcp_tools_from_mcpserver(client.get_all_tools())
-#         logger.info(f"Loaded Drasi MCP tools: {[tool.name for tool in tools]}")
-#         return tools
-#     except Exception as exc:
-#         raise RuntimeError(f"Could not connect to server '{AGENT_MCP_COMPONENT}") from exc
-
-
-def _sanitize_drasi_mcp_tools_from_client(tools: list[AgentTool]) -> list[AgentTool]:
-    """Adjust the Drasi AgentTool schemas used."""
-    for tool in tools:
-        args_model = getattr(tool, "args_model", None)
-        if args_model is None:
-            continue
-
-        try:
-            input_schema = args_model.model_json_schema()
-        except Exception:
-            continue
-
-        properties = input_schema.get("properties")
-        if not isinstance(properties, dict):
-            properties = {}
-            input_schema["properties"] = properties
-
-        required = input_schema.get("required")
-        if not isinstance(required, list):
-            required = []
-            input_schema["required"] = required
-
-        if tool.name == "drasi-agent-router-mcp_subscribe_drasi_query":
-            properties["instructions"] = {
-                "type": "string",
-                "description": (
-                    "Detailed, agent-authored instructions for what should happen "
-                    "after this Drasi subscription fires and a Drasi event is received. "
-                    "Be specific about the desired follow-up action, the relevant context, "
-                    "and any global rules, constraints, or thresholds you should remember "
-                    "when handling the event later. Write it as durable guidance for your "
-                    "future self, not as a short label."
-                ),
-            }
-            if "instructions" not in required:
-                required.append("instructions")
-
-            properties.pop("topic", None)
-            properties.pop("agent_id", None)
-            required[:] = [field for field in required if field not in {"topic", "agent_id"}]
-        elif tool.name == "drasi-agent-router-mcp_unsubscribe_drasi_query":
-            properties.pop("agent_id", None)
-            properties.pop("subscription_id", None)
-            required[:] = [
-                field for field in required if field not in {"agent_id", "subscription_id"}
-            ]
-
-        tool.args_model = create_pydantic_model_from_schema(
-            input_schema, f"{tool.name}Args"
-        )
-
-    return tools
-
 
 async def _load_mcp_tools_from_client() -> list[AgentTool]:
     client = MCPClient()
@@ -183,7 +68,16 @@ async def _load_mcp_tools_from_client() -> list[AgentTool]:
             url=f"http://localhost:{DAPR_HTTP_PORT}/v1.0/invoke/inventory-events-publisher-reaction.drasi-system/method/mcp",
         )
         tools = client.get_all_tools()
-        tools = _sanitize_drasi_mcp_tools_from_client(tools)
+        tools = [
+            DrasiWorkflowTool.from_agent_tool(
+                tool,
+                agent_name=AGENT_NAME,
+                topic="drasi-events",  # TODO: wire this up in activation
+            )
+            if tool.name == "drasi-agent-router-mcp_subscribe_drasi_query"
+            else tool
+            for tool in tools
+        ]
         logger.info(f"Loaded Drasi MCP tools: {[tool.name for tool in tools]}")
         return tools
     except Exception as exc:

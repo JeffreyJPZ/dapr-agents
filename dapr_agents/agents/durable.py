@@ -115,6 +115,7 @@ logger = get_context_aware_logger(__name__)
 # Flag to enable/disable Drasi sleep + wake up
 DRASI_ENABLED = False  # TODO: remove this
 
+
 def _get_framework_from_registry(
     agent_name: str, infra: Optional[Any] = None
 ) -> Optional[str]:
@@ -2001,7 +2002,9 @@ class DurableAgent(AgentBase):
 
         agent_id = "inventory-agent"
         try:
-            agent_state = self.state_store.load(key=f"drasi_subscriptions_{agent_id}", default={})
+            agent_state = self.state_store.load(
+                key=f"drasi_subscriptions_{agent_id}", default={}
+            )
         except Exception:
             logger.exception(
                 "Failed to load Drasi subscription state for agent_id=%s",
@@ -2016,7 +2019,11 @@ class DurableAgent(AgentBase):
         if not isinstance(subscription_ids, list):
             return []
 
-        return [str(subscription_id) for subscription_id in subscription_ids if subscription_id]
+        return [
+            str(subscription_id)
+            for subscription_id in subscription_ids
+            if subscription_id
+        ]
 
     # TODO: remove this experimental Drasi activity once the bridge flow is finalized
     def save_drasi_event(
@@ -2040,9 +2047,7 @@ class DurableAgent(AgentBase):
             return {}
 
         if isinstance(drasi_event, (dict, list)):
-            event_content = json.dumps(
-                drasi_event, ensure_ascii=False, default=str
-            )
+            event_content = json.dumps(drasi_event, ensure_ascii=False, default=str)
         else:
             event_content = str(drasi_event)
 
@@ -3976,9 +3981,7 @@ class DurableAgent(AgentBase):
         # TODO: remove this experimental Drasi runtime wiring once the bridge flow is finalized
         if DRASI_ENABLED:
             runtime.register_workflow(
-                self._named(
-                    self.drasi_bridge_workflow, self.drasi_bridge_workflow_name
-                )
+                self._named(self.drasi_bridge_workflow, self.drasi_bridge_workflow_name)
             )
 
         # Standard agent activities, all scoped per agent
