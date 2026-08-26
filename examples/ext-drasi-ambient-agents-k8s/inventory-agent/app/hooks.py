@@ -127,73 +127,18 @@ def _serialize_instructions(
     ]
 
 
-# def inject_drasi_event_handling_instructions(ctx: LLMHookContext) -> HookDecision:
-#     """
-#     Injects instructions for handling Drasi events.
-#     """
-#     messages = ctx.payload.get("messages", [])
-#     if not messages:
-#         return Proceed()
-
-#     # Get instructions keyed by agent ID (TODO: should be obtained from the runtime)
-#     with DaprClient() as client:
-#         agent_state = _read_state_value(
-#             client.get_state(
-#                 store_name=AGENT_MEMORY_COMPONENT,
-#                 key=f"{SUBSCRIPTIONS_KEY_PREFIX}{AGENT_ID}",
-#             )
-#         )
-
-#         if not isinstance(agent_state, dict):
-#             return Proceed()
-
-#         subscription_ids = agent_state.get("subscription_ids")
-#         if not isinstance(subscription_ids, list) or not subscription_ids:
-#             return Proceed()
-
-#         # TODO: replace this, this is ok for now since we only assume one subscription
-#         subscription_id = subscription_ids[0]
-#         if not subscription_id:
-#             return Proceed()
-
-#         instruction_raw_state = client.get_state(
-#             store_name=AGENT_MEMORY_COMPONENT,
-#             key=f"{SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX}{subscription_id}",
-#         )
-#         instruction_state = _read_state_value(instruction_raw_state)
-
-#     if isinstance(instruction_state, dict):
-#         instructions = instruction_state.get("instructions")
-#     else:
-#         instructions = instruction_state
-
-#     if not instructions:
-#         return Proceed()
-
-#     # Enrich messages with instructions for how to handle Drasi events
-#     messages.append(
-#         {
-#             "role": "system",
-#             "content": (
-#                 "Use the following instructions for the Drasi subscription:\n\n"
-#                 f"{instructions}"
-#             ),
-#         }
-#     )
-
-#     return Mutate(payload={"messages": messages})
-
-
-def inject_subscribe_tool_params(ctx: ToolHookContext) -> HookDecision:
-    """Inject the Drasi subscribe tool parameters into the LLM context."""
-    if ctx.step_name != "drasi-agent-router-mcp_subscribe_drasi_query":
+def update_agent_instructions_from_drasi_subscription(
+    ctx: ToolHookContext,
+) -> HookDecision:
+    """
+    Update the agent instructions in the configuration store on a Drasi subscription so the agent can hot-reload them.
+    """
+    if ctx.step_name != "subscribe_drasi_query":
         return Proceed()
-
-    new_payload = dict(ctx.payload)
 
     # TODO: this should be from the runtime
     configuration_store_name = AGENT_CONFIGURATION_COMPONENT
-    instructions = new_payload.get("instructions")
+    instructions = ctx.payload.get("instructions")
 
     logger.info(
         f"Injecting Drasi subscription tool parameters for agent '{AGENT_ID}' with instructions: {instructions}"
@@ -224,12 +169,4 @@ def inject_subscribe_tool_params(ctx: ToolHookContext) -> HookDecision:
             f"Agent instructions updated successfully in store '{configuration_store_name}' for key '{AGENT_INSTRUCTIONS_KEY}'."
         )
 
-    # Remove instructions as they are an internal detail
-    new_payload.pop("instructions", None)
-
-    # Inject the agent ID and topic into the tool call payload
-    # TODO: these should be from the runtime
-    new_payload["agent_id"] = AGENT_ID
-    new_payload["topic"] = "drasi-events-low-stock-event-query"
-
-    return Mutate(payload=new_payload)
+    return Proceed()

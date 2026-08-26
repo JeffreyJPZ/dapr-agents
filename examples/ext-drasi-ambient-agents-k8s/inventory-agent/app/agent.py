@@ -25,8 +25,11 @@ from dapr_agents.agents.configs import (
     RuntimeConfigKey,
     RuntimeSubscriptionConfig,
 )
+from dapr_agents.hooks import Hooks
 from dapr_agents.memory import ConversationDaprStateMemory
 from dapr_agents.storage.daprstores.stateservice import StateStoreService
+
+from hooks import update_agent_instructions_from_drasi_subscription
 
 logger = logging.getLogger(__name__)
 
@@ -102,4 +105,7 @@ def make_agent(
             on_config_change=_on_config_change,
         ),
         execution=AgentExecutionConfig(max_iterations=10),
+        hooks=Hooks(
+            before_tool_call=[update_agent_instructions_from_drasi_subscription],
+        ),
     )

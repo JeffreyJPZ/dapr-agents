@@ -5,4 +5,4 @@ metadata:
 spec:
   endpoint:
     streamableHTTP:
-      url: http://inventory-events-publisher-reaction.drasi-system.svc.cluster.local:8000/mcp
+      url: http://inventory-events-publisher.drasi-system.svc.cluster.local:80/mcp

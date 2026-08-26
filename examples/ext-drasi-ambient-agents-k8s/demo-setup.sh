@@ -197,13 +197,7 @@ load_secrets() {
 deploy_components() {
   echo "=== Deploying Dapr components... ==="
   kubectl apply -f "${BASE_DIR}/drasi/components/"
-  kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-configuration.yaml"
-  kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-llm.yaml"
-  # TODO: may want to switch to MCPServer
-  # kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-mcp.yaml"
-  kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-memory.yaml"
-  kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-pubsub.yaml"
-  kubectl apply -f "${BASE_DIR}/inventory-agent/components/agent-runtime.yaml"
+  kubectl apply -f "${BASE_DIR}/inventory-agent/components/"
   echo "=== Dapr components deployed successfully! ==="
 }
 
@@ -236,6 +230,9 @@ apply_drasi_resources() {
 
   drasi apply -f ./drasi/reactions/inventory-events-publisher.yaml
   drasi wait -f ./drasi/reactions/inventory-events-publisher.yaml -t 120
+  # Create the inventory-events-publisher service separately
+  # TODO: remove once reaction provider endpoints config is fixed
+  kubectl apply -f ./drasi/reactions/inventory-events-publisher-service.yaml
 
   echo "=== All Drasi resources applied successfully! ==="
 }
@@ -255,10 +252,11 @@ load_secrets
 create_secrets
 
 deploy_components
-deploy_apps
-wait_for_workloads_ready
 
 apply_drasi_resources
+
+deploy_apps
+wait_for_workloads_ready
 
 echo "=== Setup complete! ==="
 echo "=== View the workflow dashboard at http://localhost:8080 ==="
