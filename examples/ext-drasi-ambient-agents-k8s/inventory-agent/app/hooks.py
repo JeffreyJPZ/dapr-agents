@@ -19,17 +19,17 @@ from dapr_agents.hooks import (
     ToolHookContext,
 )
 
-from utils import AGENT_ID, AGENT_MEMORY_COMPONENT, write_state_value
+from utils import (
+    AGENT_ID,
+    AGENT_MEMORY_COMPONENT,
+    build_subscription_instructions_key,
+    write_state_value,
+)
 
 logger = logging.getLogger(__name__)
 
-AGENT_INSTRUCTIONS_KEY = "agent_instructions"
-AGENT_DRASI_INSTRUCTIONS_START_TAG = "<drasi-instructions>"
-AGENT_DRASI_INSTRUCTIONS_END_TAG = "</drasi-instructions>"
-SUBSCRIPTIONS_KEY_PREFIX = "drasi_subscriptions"
 
-
-# TODO: are hooks sufficient for this?
+# TODO: are hooks sufficient for this? or should we move this to the tool?
 def persist_task_instructions_from_drasi_subscription(
     ctx: ToolHookContext,
 ) -> HookDecision:
@@ -44,26 +44,21 @@ def persist_task_instructions_from_drasi_subscription(
     if instructions is None:
         return Proceed()
 
-    subscription_id = ctx.payload.get("subscription_id")
-    query_id = ctx.payload.get("query_id") or ctx.payload.get("queryId")
+    query_id = ctx.payload.get("query_id")
+    subscription_id = "inventory-agent"  # TODO: remove hardcoded subscription ID as its injected by the tool
 
-    if isinstance(subscription_id, str) and subscription_id:
-        subscription_key = f"{AGENT_ID}:{subscription_id}"
-        if isinstance(query_id, str) and query_id:
-            subscription_key = f"{query_id}:{subscription_key}"
-    else:
-        subscription_key = AGENT_ID
+    key = build_subscription_instructions_key(
+        f"{query_id}:{AGENT_ID}:{subscription_id}"
+    )
 
     logger.info(
-        "Injecting Drasi subscription tool parameters for agent '%s' with "
-        "instructions: %s",
-        AGENT_ID,
-        instructions,
+        f"Agent '{AGENT_ID}' subscribing to query '{query_id}' with "
+        f"instructions: {instructions} (key={key})"
     )
 
     write_state_value(
         AGENT_MEMORY_COMPONENT,
-        subscription_key,
+        key,
         {"instructions": instructions},
     )
 

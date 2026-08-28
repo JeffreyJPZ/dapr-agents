@@ -25,7 +25,12 @@ from dapr_agents.tool.mcp import mcp_tool_def_to_workflow_tool
 from dapr_agents.workflow.utils.subscription import MessageContext
 
 from dapr_agents.ext.drasi import DrasiChangeEvent, drasi_trigger
-from utils import AGENT_MEMORY_COMPONENT, read_state_value
+from utils import (
+    AGENT_MEMORY_COMPONENT,
+    DRASI_SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX,
+    build_subscription_instructions_key,
+    read_state_value,
+)
 
 from agent import make_agent
 from tools import DrasiWorkflowTool
@@ -37,28 +42,31 @@ logger = logging.getLogger(__name__)
 DRASI_TOPIC = "drasi-events"
 
 
-def _normalize_instructions(state: object | None) -> str | None:
+def _normalize_instructions(state: Any) -> str:
     if state is None:
-        return None
+        return ""
     if isinstance(state, dict):
         instructions = state.get("instructions")
     else:
         instructions = state
 
-    if instructions is None:
-        return None
+    if not instructions:
+        return ""
     if isinstance(instructions, list):
         return "\n".join(str(item) for item in instructions)
     return str(instructions)
 
 
 def make_task(event: DrasiChangeEvent, ctx: MessageContext) -> TriggerAction:
-    instructions = _normalize_instructions(
-        read_state_value(AGENT_MEMORY_COMPONENT, ctx.event.id)
-    )
+    # Extract key suffixes from CE id and add prefix
+    key = build_subscription_instructions_key(":".join(ctx.event.id.split(":")[:3]))
+    raw_instructions = read_state_value(AGENT_MEMORY_COMPONENT, key)
+    instructions = _normalize_instructions(raw_instructions)
+
     task = event.model_dump_json()
     if instructions:
         task = f"{instructions}\n\n{task}"
+
     return TriggerAction(task=task)
 
 

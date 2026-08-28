@@ -20,46 +20,17 @@ from typing import Any, Iterable
 from dapr.clients import DaprClient
 
 AGENT_MEMORY_COMPONENT = os.getenv("AGENT_MEMORY_COMPONENT", "agent-memory")
-AGENT_ID = "inventory-agent"
-SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX = "subscription_instructions_"
+# TODO: remove hardcoded agent ID
+AGENT_ID = "InventoryAgent"
+DRASI_SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX = "drasi_subscriptions:"
 
 
 def build_subscription_instructions_key(identifier: str | None) -> str:
     """Build the state key used to persist Drasi task instructions."""
-    return f"{SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX}{identifier or ''}"
+    return f"{DRASI_SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX}{identifier or ''}"
 
 
-def _state_key_variants(identifier: str | None) -> Iterable[str]:
-    """Return likely key variants for a Drasi CloudEvent identifier."""
-    if identifier is None:
-        return []
-    normalized = identifier.strip()
-    if not normalized:
-        return []
-
-    variants = [normalized]
-    parts = normalized.split(":")
-    if len(parts) >= 5:
-        # Full Drasi CloudEvent id: queryId:agent_id:subscription_id:sequence:idx
-        variants.append(":".join(parts[:3]))
-        variants.append(":".join(parts[1:3]))
-    elif len(parts) >= 3:
-        variants.append(":".join(parts[:3]))
-        variants.append(":".join(parts[1:3]))
-    elif len(parts) == 2:
-        variants.append(":".join(parts))
-
-    # Preserve order while removing duplicates.
-    seen: set[str] = set()
-    ordered: list[str] = []
-    for variant in variants:
-        if variant and variant not in seen:
-            seen.add(variant)
-            ordered.append(variant)
-    return ordered
-
-
-def _decode_state_value(response: object) -> object | None:
+def _decode_state_value(response: Any) -> Any:
     if response is None:
         return None
     if hasattr(response, "json"):
@@ -82,26 +53,25 @@ def _decode_state_value(response: object) -> object | None:
         return text
 
 
-def read_state_value(store_name: str, key: str | None) -> object | None:
-    """Read a JSON-encoded Dapr state value, trying common Drasi key variants."""
+def read_state_value(store_name: str, key: str | None) -> Any:
+    """Read a JSON-encoded Dapr state value."""
     with DaprClient() as client:
-        for candidate in _state_key_variants(key):
-            response = client.get_state(
-                store_name=store_name,
-                key=build_subscription_instructions_key(candidate),
-            )
-            value = _decode_state_value(response)
-            if value is not None:
-                return value
+        response = client.get_state(
+            store_name=store_name,
+            key=key,
+        )
+        value = _decode_state_value(response)
+        if value is not None:
+            return value
     return None
 
 
-def write_state_value(store_name: str, key: str | None, value: object) -> None:
+def write_state_value(store_name: str, key: str | None, value: Any) -> None:
     """Persist a JSON-serializable value through Dapr state."""
     with DaprClient() as client:
         client.save_state(
             store_name=store_name,
-            key=build_subscription_instructions_key(key),
+            key=key,
             value=json.dumps(value),
             state_metadata={"contentType": "application/json"},
         )

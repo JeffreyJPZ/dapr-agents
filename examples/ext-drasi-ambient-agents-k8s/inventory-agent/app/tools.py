@@ -27,6 +27,8 @@ from dapr_agents.types import ToolError
 
 logger = logging.getLogger(__name__)
 
+
+# TODO: this needs to be improved
 DRASI_INSTRUCTIONS_DESCRIPTION = (
     "Detailed, agent-authored instructions for what should happen "
     "after this Drasi subscription fires and a Drasi event is received. "
@@ -154,7 +156,9 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
         # Inject agent_id, subscription_id, topic from runtime
         cleaned_kwargs["agent_id"] = agent_id
         # TODO: replace with context.new_guid() when available
-        cleaned_kwargs["subscription_id"] = self._build_subscription_id(agent_id)
+        cleaned_kwargs["subscription_id"] = (
+            "inventory-agent"  # TODO: replace hardcoded subscription ID
+        )
         cleaned_kwargs["topic"] = self._topic
 
         try:
