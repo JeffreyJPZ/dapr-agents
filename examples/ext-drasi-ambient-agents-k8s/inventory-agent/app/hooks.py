@@ -11,162 +11,60 @@
 # limitations under the License.
 #
 
-import json
 import logging
-import os
-
-from dapr.clients import DaprClient
 
 from dapr_agents.hooks import (
     HookDecision,
-    LLMHookContext,
-    Mutate,
     Proceed,
     ToolHookContext,
 )
 
+from utils import AGENT_ID, AGENT_MEMORY_COMPONENT, write_state_value
+
 logger = logging.getLogger(__name__)
 
-AGENT_CONFIGURATION_COMPONENT = os.getenv(
-    "AGENT_CONFIGURATION_COMPONENT", "agent-configuration"
-)
-
-AGENT_ID = "inventory-agent"
 AGENT_INSTRUCTIONS_KEY = "agent_instructions"
 AGENT_DRASI_INSTRUCTIONS_START_TAG = "<drasi-instructions>"
 AGENT_DRASI_INSTRUCTIONS_END_TAG = "</drasi-instructions>"
-SUBSCRIPTION_ID = "low-stock-event-query"
 SUBSCRIPTIONS_KEY_PREFIX = "drasi_subscriptions"
-SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX = "subscription_instructions_"
 
 
-def _read_state_value(response: object) -> object | None:
-    if response is None:
-        return None
-    if hasattr(response, "json"):
-        try:
-            return response.json()
-        except Exception:
-            pass
-    data = getattr(response, "data", None)
-    if data is None:
-        return None
-    if isinstance(data, bytes):
-        text = data.decode("utf-8")
-    else:
-        text = str(data)
-    try:
-        return json.loads(text)
-    except Exception:
-        return text
-
-
-def _write_state_value(store_name: str, key: str, value: object) -> None:
-    """Persist a JSON-serializable value through Dapr state."""
-    with DaprClient() as client:
-        client.save_state(
-            store_name=store_name,
-            key=key,
-            value=json.dumps(value),
-            state_metadata={"contentType": "application/json"},
-        )
-
-
-def _load_instructions_from_store(store_name: str, key: str) -> list[str]:
-    """Load the current agent instructions from the config store."""
-    with DaprClient() as client:
-        raw_state = client.get_state(store_name=store_name, key=key)
-    state_value = _read_state_value(raw_state)
-    if isinstance(state_value, dict):
-        instructions = state_value.get("instructions")
-        if isinstance(instructions, list):
-            return [str(item) for item in instructions]
-        if isinstance(instructions, str):
-            return [line for line in instructions.splitlines() if line.strip()]
-        return []
-    if isinstance(state_value, list):
-        return [str(item) for item in state_value]
-    if isinstance(state_value, str):
-        return [line for line in state_value.splitlines() if line.strip()]
-    return []
-
-
-def _serialize_instructions(
-    instructions: list[str], generated_instructions: object
-) -> list[str]:
-    """Replace or append the Drasi instruction block."""
-    if isinstance(generated_instructions, list):
-        generated_text = "\n".join(str(item) for item in generated_instructions)
-    elif isinstance(generated_instructions, str):
-        generated_text = generated_instructions
-    else:
-        generated_text = json.dumps(generated_instructions, ensure_ascii=False)
-    generated_lines = [line for line in generated_text.splitlines() if line.strip()]
-
-    start_index = None
-    end_index = None
-    for index, line in enumerate(instructions):
-        if line.strip() == AGENT_DRASI_INSTRUCTIONS_START_TAG:
-            start_index = index
-        if line.strip() == AGENT_DRASI_INSTRUCTIONS_END_TAG:
-            end_index = index
-            break
-
-    if start_index is None or end_index is None or end_index <= start_index:
-        return [
-            *instructions,
-            AGENT_DRASI_INSTRUCTIONS_START_TAG,
-            *generated_lines,
-            AGENT_DRASI_INSTRUCTIONS_END_TAG,
-        ]
-
-    return [
-        *instructions[: start_index + 1],
-        *generated_lines,
-        *instructions[end_index:],
-    ]
-
-
-def update_agent_instructions_from_drasi_subscription(
+# TODO: are hooks sufficient for this?
+def persist_task_instructions_from_drasi_subscription(
     ctx: ToolHookContext,
 ) -> HookDecision:
     """
-    Update the agent instructions in the configuration store on a Drasi subscription so the agent can hot-reload them.
+    Persist the Drasi-generated task instructions so the trigger mapper can
+    recover them when a matching CloudEvent arrives.
     """
     if ctx.step_name != "subscribe_drasi_query":
         return Proceed()
 
-    # TODO: this should be from the runtime
-    configuration_store_name = AGENT_CONFIGURATION_COMPONENT
     instructions = ctx.payload.get("instructions")
+    if instructions is None:
+        return Proceed()
+
+    subscription_id = ctx.payload.get("subscription_id")
+    query_id = ctx.payload.get("query_id") or ctx.payload.get("queryId")
+
+    if isinstance(subscription_id, str) and subscription_id:
+        subscription_key = f"{AGENT_ID}:{subscription_id}"
+        if isinstance(query_id, str) and query_id:
+            subscription_key = f"{query_id}:{subscription_key}"
+    else:
+        subscription_key = AGENT_ID
 
     logger.info(
-        f"Injecting Drasi subscription tool parameters for agent '{AGENT_ID}' with instructions: {instructions}"
+        "Injecting Drasi subscription tool parameters for agent '%s' with "
+        "instructions: %s",
+        AGENT_ID,
+        instructions,
     )
 
-    if instructions is not None:
-        current_instructions = _load_instructions_from_store(
-            configuration_store_name, AGENT_INSTRUCTIONS_KEY
-        )
-
-        logger.info(
-            f"Current agent instructions in store '{configuration_store_name}' for key '{AGENT_INSTRUCTIONS_KEY}': {current_instructions}"
-        )
-
-        updated_instructions = _serialize_instructions(
-            current_instructions, instructions
-        )
-
-        logger.info(
-            f"Updating agent instructions in store '{configuration_store_name}' for key '{AGENT_INSTRUCTIONS_KEY}' with updated instructions: {updated_instructions}"
-        )
-
-        _write_state_value(
-            configuration_store_name, AGENT_INSTRUCTIONS_KEY, updated_instructions
-        )
-
-        logger.info(
-            f"Agent instructions updated successfully in store '{configuration_store_name}' for key '{AGENT_INSTRUCTIONS_KEY}'."
-        )
+    write_state_value(
+        AGENT_MEMORY_COMPONENT,
+        subscription_key,
+        {"instructions": instructions},
+    )
 
     return Proceed()

@@ -29,7 +29,7 @@ from dapr_agents.hooks import Hooks
 from dapr_agents.memory import ConversationDaprStateMemory
 from dapr_agents.storage.daprstores.stateservice import StateStoreService
 
-from hooks import update_agent_instructions_from_drasi_subscription
+from hooks import persist_task_instructions_from_drasi_subscription
 
 logger = logging.getLogger(__name__)
 
@@ -73,12 +73,7 @@ def _agent_profile() -> AgentProfileConfig:
         name=AGENT_NAME,
         role=AGENT_ROLE,
         goal=AGENT_GOAL,
-        instructions=[
-            *AGENT_INSTRUCTIONS,
-            "<drasi-instructions>",
-            "Drasi-generated instructions will be inserted here.",
-            "</drasi-instructions>",
-        ],
+        instructions=AGENT_INSTRUCTIONS,
     )
 
 
@@ -106,6 +101,6 @@ def make_agent(
         ),
         execution=AgentExecutionConfig(max_iterations=10),
         hooks=Hooks(
-            before_tool_call=[update_agent_instructions_from_drasi_subscription],
+            before_tool_call=[persist_task_instructions_from_drasi_subscription],
         ),
     )

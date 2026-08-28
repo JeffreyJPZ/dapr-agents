@@ -17,12 +17,15 @@ import asyncio
 import logging
 from typing import Any
 
+from dapr.ext.workflow.aio import DaprMCPClient
+
 from dapr_agents import AgentRunner
 from dapr_agents.agents.schemas import TriggerAction
 from dapr_agents.tool.mcp import mcp_tool_def_to_workflow_tool
-from dapr.ext.workflow.aio import DaprMCPClient
+from dapr_agents.workflow.utils.subscription import MessageContext
 
 from dapr_agents.ext.drasi import DrasiChangeEvent, drasi_trigger
+from utils import AGENT_MEMORY_COMPONENT, read_state_value
 
 from agent import make_agent
 from tools import DrasiWorkflowTool
@@ -34,8 +37,29 @@ logger = logging.getLogger(__name__)
 DRASI_TOPIC = "drasi-events"
 
 
-def make_task(event: DrasiChangeEvent, ctx: Any) -> TriggerAction:
-    return TriggerAction(task=event.model_dump_json())
+def _normalize_instructions(state: object | None) -> str | None:
+    if state is None:
+        return None
+    if isinstance(state, dict):
+        instructions = state.get("instructions")
+    else:
+        instructions = state
+
+    if instructions is None:
+        return None
+    if isinstance(instructions, list):
+        return "\n".join(str(item) for item in instructions)
+    return str(instructions)
+
+
+def make_task(event: DrasiChangeEvent, ctx: MessageContext) -> TriggerAction:
+    instructions = _normalize_instructions(
+        read_state_value(AGENT_MEMORY_COMPONENT, ctx.event.id)
+    )
+    task = event.model_dump_json()
+    if instructions:
+        task = f"{instructions}\n\n{task}"
+    return TriggerAction(task=task)
 
 
 async def _load_mcp_tools() -> list[DrasiWorkflowTool]:

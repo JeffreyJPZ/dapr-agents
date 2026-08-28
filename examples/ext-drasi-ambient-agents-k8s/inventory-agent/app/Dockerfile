@@ -56,6 +56,7 @@ COPY --from=build /app/.venv .venv
 COPY --from=build /app/agent.py .
 COPY --from=build /app/app.py .
 COPY --from=build /app/hooks.py .
+COPY --from=build /app/utils.py .
 COPY --from=build /app/tools.py .
 
 ENV PATH="/app/.venv/bin:$PATH"
