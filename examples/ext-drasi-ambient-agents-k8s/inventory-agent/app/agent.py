@@ -62,7 +62,7 @@ AGENT_MEMORY_COMPONENT = os.getenv("AGENT_MEMORY_COMPONENT", "agent-memory")
 AGENT_RUNTIME_COMPONENT = os.getenv("AGENT_RUNTIME_COMPONENT", "agent-runtime")
 
 
-def make_agent() -> DurableAgent:
+def make_agent(tools: list[Any] = []) -> DurableAgent:
     return DurableAgent(
         profile=AgentProfileConfig(
             name=AGENT_NAME,
@@ -81,6 +81,7 @@ def make_agent() -> DurableAgent:
         state=AgentStateConfig(
             store=StateStoreService(store_name=AGENT_RUNTIME_COMPONENT),
         ),
+        tools=tools,
         execution=AgentExecutionConfig(max_iterations=10),
         hooks=Hooks(
             before_tool_call=[drasi_write_subscription],

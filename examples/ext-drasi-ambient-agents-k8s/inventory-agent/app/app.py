@@ -13,12 +13,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 
-from dapr_agents import AgentRunner
+from dapr.ext.workflow import DaprMCPClient
 
-from dapr_agents.ext.drasi import enable_drasi
+from dapr_agents import AgentTool, AgentRunner
+
+from dapr_agents.ext.drasi import enable_drasi, DrasiWorkflowTool
 
 from agent import make_agent
 
@@ -28,17 +31,47 @@ logger = logging.getLogger(__name__)
 
 AGENT_MCP_COMPONENT = os.getenv("AGENT_MCP_COMPONENT", "agent-mcp")
 AGENT_PUBSUB_COMPONENT = os.getenv("AGENT_PUBSUB_COMPONENT", "agent-pubsub")
+DRASI_TOPIC = "drasi-events"
+
+async def _load_mcp_tools() -> list[AgentTool]:
+    """Load MCP tools and wrap the Drasi subscription tool."""
+    client = DaprMCPClient()
+    try:
+        await client.connect(AGENT_MCP_COMPONENT)
+        tools: list[AgentTool] = []
+        for tool_def in client.get_all_tools():
+            if tool_def.name == "subscribe_drasi_query":
+                # TODO: support unsubscribe and list queries
+                tool = DrasiWorkflowTool.from_mcp_tool_def(
+                    tool_def,
+                    topic=DRASI_TOPIC,  # TODO: can we delay this?
+                )
+            tools.append(tool)
+        logger.info(
+            f"Loaded Drasi MCP tools from '{AGENT_MCP_COMPONENT}': "
+            f"{[tool.name for tool in tools]}"
+        )
+        return tools
+    except Exception as exc:
+        logger.exception(f"Failed to load MCP tools from '{AGENT_MCP_COMPONENT}'")
+        raise RuntimeError(
+            f"Could not load MCP tools from server '{AGENT_MCP_COMPONENT}'"
+        ) from exc
 
 
 def main() -> None:
-    agent = make_agent()
+    tools = asyncio.run(_load_mcp_tools())
 
-    # TODO: should users construct Drasi tools themselves?
+    # Get a fresh event loop
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
+    agent = make_agent(tools=tools)
+
     enable_drasi(
         agent,
         mcp_server=AGENT_MCP_COMPONENT,
         pubsub=AGENT_PUBSUB_COMPONENT,
-        topic="drasi-events",
+        topic=DRASI_TOPIC,
     )
 
     runner = AgentRunner()

@@ -446,14 +446,14 @@ def drasi_trigger(
 def enable_drasi(
     agent: DurableAgent,
     *,
-    mcpserver: str,
+    mcpserver: str,  # TODO: do we still need this?
     pubsub: str | None = None,
     topic: str | None = None,
 ) -> None:
-    """Enable Drasi MCP tools and catch-all event subscriptions for an agent.
+    """Enable dynamic Drasi subscriptions for an agent.
 
     Args:
-        agent: The durable agent to enhance with Drasi tools and an activation.
+        agent: The target agent.
         mcpserver: Name of the MCPServer resource declaring the Drasi agent router MCP server.
         pubsub: Optional Dapr pub/sub component. Invalid or empty values fall
             back to the agent's configured pub/sub component.
@@ -467,51 +467,6 @@ def enable_drasi(
         RuntimeError: If the MCP server cannot be loaded or no pub/sub
             component can be resolved during activation.
     """
-    # Eagerly validate and resolve the topic so that tool construction can use it.
-    resolved_topic = topic if isinstance(topic, str) and topic else "drasi-events"
-
-    async def _load_mcp_tools() -> list[AgentTool]:
-        """Load MCP tools and wrap the Drasi subscription tool."""
-        client = DaprMCPClient()
-        try:
-            await client.connect(mcpserver)
-            tools: list[AgentTool] = []
-            for tool_def in client.get_all_tools():
-                tool = mcp_tool_def_to_workflow_tool(tool_def)
-                if tool_def.name == "subscribe_drasi_query":
-                    # TODO: support unsubscribe and list queries
-                    tool = DrasiWorkflowTool.to_drasi_workflow_tool(
-                        tool,
-                        topic=resolved_topic,
-                    )
-                tools.append(tool)
-            logger.info(
-                f"Loaded Drasi MCP tools from '{mcpserver}': "
-                f"{[tool.name for tool in tools]}"
-            )
-            return tools
-        except Exception as exc:
-            logger.exception(f"Failed to load MCP tools from '{mcpserver}'")
-            raise RuntimeError(
-                f"Could not load MCP tools from server '{mcpserver}'"
-            ) from exc
-
-    tools = asyncio.run(_load_mcp_tools())
-
-    # Get a fresh event loop
-    asyncio.set_event_loop(asyncio.new_event_loop())
-
-    # Register the tools on the already-created instance. The executor owns
-    # the callable lookup used by LLM dispatch, while ``agent.tools`` is used
-    # for agent metadata and configuration inspection.
-    # TODO: how to register new tools after agent init as agent metadata is already registered?
-    for tool in tools:
-        if agent.tool_executor.get_tool(tool.name) is None:
-            agent.tools.append(tool)
-            agent.tool_executor.register_tool(tool)
-    if tools and agent.execution.tool_choice is None:
-        agent.execution.tool_choice = "auto"
-
     def _make_task(event: DrasiChangeEvent, ctx: MessageContext) -> TriggerAction:
         """Serialize a Drasi event as the task message for the agent."""
         return TriggerAction(task=event.model_dump_json())
@@ -523,6 +478,7 @@ def enable_drasi(
             if isinstance(pubsub, str) and pubsub
             else (ctx.agent.pubsub.pubsub_name if ctx.agent.pubsub else None)
         )
+        resolved_topic = topic if isinstance(topic, str) and topic else "drasi-events"
         return _EnableDrasiConfig(
             mcpserver=mcpserver,
             pubsub=resolved_pubsub,
@@ -538,10 +494,19 @@ def enable_drasi(
                 "pub/sub on the agent."
             )
 
+    # TODO: this is a bit hacky
+    def _set_drasi_tool_topics(agent: DurableAgent, topic: str) -> None:
+        """Set the resolved topic on ``DrasiWorkflowTool`` instances registered with an agent."""
+        for tool in agent.tools:
+            if "drasi" in tool.name.lower() and isinstance(tool, DrasiWorkflowTool):
+                tool._topic = topic
+
     def _activate(ctx: ActivationContext) -> Callable[[], None]:
         """Resolve, validate, and register the Drasi event subscription."""
         config = _resolve_config(ctx)
         _validate_config(ctx, config)
+        _set_drasi_tool_topics(ctx.agent, config.topic)
+    
         agent_name = ctx.agent.name or ctx.agent
 
         def handler_fn(*_) -> None:

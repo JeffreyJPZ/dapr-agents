@@ -20,8 +20,10 @@ from typing import Any, Callable, Type
 
 from pydantic import BaseModel, PrivateAttr
 
+from dapr.ext.workflow.mcp import MCPToolDef
 from dapr.ext.workflow.mcp_schema import create_pydantic_model_from_schema
 
+from dapr_agents.tool.mcp.dapr_workflow_client import mcp_tool_def_to_workflow_tool
 from dapr_agents.tool.workflow import WorkflowContextInjectedTool
 from dapr_agents.types import ToolError
 
@@ -42,57 +44,60 @@ DRASI_INSTRUCTIONS_DESCRIPTION = (
 class DrasiWorkflowTool(WorkflowContextInjectedTool):
     """A WorkflowContextInjectedTool that is aware of Drasi-specific routing metadata."""
 
+    # Used by ``subscribe_drasi_query``
     _topic: str = PrivateAttr()
+    # Used by ``subscribe_drasi_query`` and ``unsubscribe_drasi_query```
     _subscription_arg: str = PrivateAttr(default="_subscription_id")
-    # Reference to the original args_model matching the original MCP tool schema
+    # Reference to the original ``args_model`` matching the original MCP tool schema
     _validation_args_model: Type[BaseModel] = PrivateAttr()
-    # Reference to the args_model that is exposed to the LLM, which includes an ``instructions`` param
+    # Reference to the ``args_model`` that is exposed to the LLM
     _exposed_args_model: Type[BaseModel] = PrivateAttr()
 
     @classmethod
-    def to_drasi_workflow_tool(
+    def from_mcp_tool_def(
         cls,
-        tool: WorkflowContextInjectedTool,
-        *,
-        topic: str,  # TODO: should this even be passed here?
+        tool: MCPToolDef,  # TODO: is this the right type?
     ) -> "DrasiWorkflowTool":
-        """Wrap a workflow-native MCP tool so it can carry Drasi routing metadata."""
+        """Wrap a framework-agnostic MCP tool definition so it can carry Drasi routing metadata."""
         if tool.func is None:
             raise ToolError(
-                f"Tool '{tool.name}' must define a callable function before wrapping"
+                f"Tool '{tool.name}' must define a callable function"
             )
         if tool.args_model is None:
             raise ToolError(
-                f"Tool '{tool.name}' must define an args model before wrapping"
+                f"Tool '{tool.name}' must define an args model"
             )
 
-        validation_args_model = tool.args_model
-        # TODO: strip exposed_args_model of infra-level params
-        exposed_args_model = cls._clone_schema_with_instructions(validation_args_model)
-        wrapped_tool = cls(
-            name=tool.name,
-            description=tool.description,
-            func=tool.func,
-            args_model=exposed_args_model,
-            source=tool.source,
+        # Convert to ``WorkflowContextInjectedTool``
+        workflow_tool = mcp_tool_def_to_workflow_tool(tool)
+
+        drasi_workflow_tool = cls(
+            name=workflow_tool.name,
+            description=workflow_tool.description,
+            func=workflow_tool.func,
+            args_model=workflow_tool.args_model,
+            source=workflow_tool.source,
         )
-        # Set private attributes
-        wrapped_tool._topic = topic
-        wrapped_tool._validation_args_model = validation_args_model
-        wrapped_tool._exposed_args_model = exposed_args_model
+        validation_args_model = workflow_tool.args_model
+        exposed_args_model = drasi_workflow_tool._create_exposed_args_model(validation_args_model)
 
-        logger.debug(
-            "Wrapped workflow tool '%s' for Drasi topic '%s'", tool.name, topic
-        )
+        # Set ``args_model`` to the LLM-exposed model
+        drasi_workflow_tool.args_model = exposed_args_model
 
-        return wrapped_tool
+        # Set private attributes. ``_topic`` is assigned when the agent is
+        # hosted, after the activation configuration has been resolved.
+        drasi_workflow_tool._validation_args_model = validation_args_model
+        drasi_workflow_tool._exposed_args_model = exposed_args_model
 
-    @classmethod
-    def _clone_schema_with_instructions(
-        cls,
-        args_model: Type[BaseModel] | None,
+        logger.debug(f"Created Drasi workflow tool '{drasi_workflow_tool.name}'")
+
+        return drasi_workflow_tool
+
+    def _create_exposed_args_model(
+        self,
+        args_model: type[BaseModel] | None,
     ) -> Type[BaseModel]:
-        """Clone an args schema and add the Drasi instructions field."""
+        """Create the argument model exposed to the LLM for a Drasi tool."""
         if args_model is None:
             schema: dict[str, Any] = {
                 "type": "object",
@@ -114,24 +119,30 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
             required = []
             schema["required"] = required
 
-        properties["instructions"] = {
-            "type": "string",
-            "description": DRASI_INSTRUCTIONS_DESCRIPTION,
-        }
-        if "instructions" not in required:
-            required.append("instructions")
+        fields_to_remove: set[str] = set()
+        if self.name == "subscribe_drasi_query":
+            fields_to_remove = {"agent_id", "subscription_id", "topic"}
+            properties["instructions"] = {
+                "type": "string",
+                "description": DRASI_INSTRUCTIONS_DESCRIPTION,
+            }
+            if "instructions" not in required:
+                required.append("instructions")
+        elif self.name == "unsubscribe_drasi_query":
+            fields_to_remove = {"agent_id", "subscription_id"}
 
-        return create_pydantic_model_from_schema(schema, f"{base_name}WithInstructions")
+        for field_name in fields_to_remove:
+            properties.pop(field_name, None)
+        required[:] = [field for field in required if field not in fields_to_remove]
+
+        return create_pydantic_model_from_schema(schema, f"{base_name}Exposed")  # TODO: is this a good name>
 
     def _clean_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
-        """Strip LLM-only fields from a ``kwargs`` dict."""
+        """Strip LLM-only arguments from a ``kwargs`` tool dict."""
         cleaned_kwargs = dict(kwargs)
-        cleaned_kwargs.pop("instructions", None)
 
-        if "kwargs" in cleaned_kwargs and isinstance(cleaned_kwargs["kwargs"], dict):
-            inner_kwargs = dict(cleaned_kwargs["kwargs"])
-            inner_kwargs.pop("instructions", None)
-            cleaned_kwargs["kwargs"] = inner_kwargs
+        # This should only apply to ``subscribe_drasi_query``
+        cleaned_kwargs.pop("instructions", None)
 
         return cleaned_kwargs
 
@@ -142,10 +153,7 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
     def _validate_and_prepare_args(
         self, func: Callable[..., Any], *args: Any, **kwargs: Any
     ) -> dict[str, Any]:
-        """
-        Remove the internal Drasi instructions before validating, then inject
-        the runtime routing values the MCP server expects.
-        """
+        """Strip LLM-only arguments, then inject the runtime/infra arguments the MCP tool expects."""
         cleaned_kwargs = self._clean_kwargs(kwargs)
 
         # NOTE: this is not the workflow instance ID, but the user-facing agent ID
@@ -155,22 +163,30 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
             "Drasi workflow tool requires '_source_agent' in kwargs"
         )
 
-        # Inject agent ID, forwarded subscription ID, topic
-        cleaned_kwargs["agent_id"] = agent_id
-        cleaned_kwargs["subscription_id"] = cleaned_kwargs[self._subscription_arg]
-        cleaned_kwargs["topic"] = self._topic
+        if self.name == "subscribe_drasi_query":
+            # Inject agent ID, forwarded subscription ID, topic
+            cleaned_kwargs["agent_id"] = agent_id
+            cleaned_kwargs["subscription_id"] = cleaned_kwargs[self._subscription_arg]
+            cleaned_kwargs["topic"] = self._topic
 
-        # Strip forwarded subscription ID
-        cleaned_kwargs.pop(self._subscription_arg, None)
+            # Strip forwarded subscription ID as it has been promoted to a top-level argument
+            cleaned_kwargs.pop(self._subscription_arg, None)
+        elif self.name == "unsubscribe_drasi_query":
+            # Inject agent ID, forwarded subscription ID
+            cleaned_kwargs["agent_id"] = agent_id
+            cleaned_kwargs["subscription_id"] = cleaned_kwargs[self._subscription_arg]
+
+            # Strip forwarded subscription ID as it has been promoted to a top-level argument
+            cleaned_kwargs.pop(self._subscription_arg, None)
 
         try:
-            # Point args_model to the validation model so we can validate without instructions
+            # Set ``args_model`` to the validation model matching the original MCP tool schema
             self.args_model = self._validation_args_model
             prepared_kwargs = super()._validate_and_prepare_args(
                 func, *args, **cleaned_kwargs
             )
         finally:
-            # Restore args_model to the exposed model so the LLM can continue to generate instructions
+            # Restore ``args_model`` to the LLM-exposed model
             self.args_model = self._exposed_args_model
 
         return prepared_kwargs
