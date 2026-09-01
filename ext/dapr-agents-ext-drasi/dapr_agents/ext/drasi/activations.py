@@ -467,7 +467,7 @@ def enable_drasi(
         RuntimeError: If the MCP server cannot be loaded or no pub/sub
             component can be resolved during activation.
     """
-    # Immediately validate and resolve the topic so that tool construction can use it.
+    # Eagerly validate and resolve the topic so that tool construction can use it.
     resolved_topic = topic if isinstance(topic, str) and topic else "drasi-events"
 
     async def _load_mcp_tools() -> list[AgentTool]:
@@ -529,7 +529,7 @@ def enable_drasi(
             topic=resolved_topic,
         )
 
-    def _validate_config(config: _EnableDrasiConfig) -> None:
+    def _validate_config(ctx: ActivationContext, config: _EnableDrasiConfig) -> None:
         """Lazily validate the resolved configuration."""
         if config.pubsub is None:
             raise RuntimeError(
