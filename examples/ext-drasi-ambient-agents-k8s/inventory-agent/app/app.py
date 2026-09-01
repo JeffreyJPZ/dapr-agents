@@ -19,7 +19,7 @@ import os
 
 from dapr.ext.workflow import DaprMCPClient
 
-from dapr_agents import AgentTool, AgentRunner
+from dapr_agents import AgentRunner
 
 from dapr_agents.ext.drasi import enable_drasi, DrasiWorkflowTool
 
@@ -33,27 +33,21 @@ AGENT_MCP_COMPONENT = os.getenv("AGENT_MCP_COMPONENT", "agent-mcp")
 AGENT_PUBSUB_COMPONENT = os.getenv("AGENT_PUBSUB_COMPONENT", "agent-pubsub")
 DRASI_TOPIC = "drasi-events"
 
-async def _load_mcp_tools() -> list[AgentTool]:
+
+async def _load_mcp_tools() -> list:
     """Load MCP tools and wrap the Drasi subscription tool."""
     client = DaprMCPClient()
     try:
         await client.connect(AGENT_MCP_COMPONENT)
-        tools: list[AgentTool] = []
-        for tool_def in client.get_all_tools():
-            if tool_def.name == "subscribe_drasi_query":
-                # TODO: support unsubscribe and list queries
-                tool = DrasiWorkflowTool.from_mcp_tool_def(
-                    tool_def,
-                    topic=DRASI_TOPIC,  # TODO: can we delay this?
-                )
-            tools.append(tool)
+        tools = [
+            DrasiWorkflowTool.from_mcp_tool_def(tool_def) for tool_def in client.get_all_tools()
+        ]
         logger.info(
             f"Loaded Drasi MCP tools from '{AGENT_MCP_COMPONENT}': "
             f"{[tool.name for tool in tools]}"
         )
         return tools
     except Exception as exc:
-        logger.exception(f"Failed to load MCP tools from '{AGENT_MCP_COMPONENT}'")
         raise RuntimeError(
             f"Could not load MCP tools from server '{AGENT_MCP_COMPONENT}'"
         ) from exc
