@@ -77,7 +77,11 @@ def drasi_write_subscription(
     write_state_value(
         AGENT_MEMORY_COMPONENT,
         key,
-        {"instructions": instructions},  # TODO: add status?
+        {
+            "subscription_id": subscription_id,
+            "status": "PENDING",
+            "instructions": instructions,
+        },  # TODO: make this a pydantic model?
     )
 
     # Forward the subscription ID as a hidden arg so the Drasi workflow tool can later promote it.
