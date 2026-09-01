@@ -67,6 +67,7 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
             )
 
         validation_args_model = tool.args_model
+        # TODO: strip exposed_args_model of infra-level params
         exposed_args_model = cls._clone_schema_with_instructions(validation_args_model)
         wrapped_tool = cls(
             name=tool.name,
