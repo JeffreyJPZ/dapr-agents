@@ -29,7 +29,10 @@ from dapr_agents.hooks import Hooks
 from dapr_agents.memory import ConversationDaprStateMemory
 from dapr_agents.storage.daprstores.stateservice import StateStoreService
 
-from hooks import persist_task_instructions_from_drasi_subscription
+from dapr_agents.ext.drasi import (
+    drasi_read_subscription,
+    drasi_write_subscription,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +55,6 @@ AGENT_INSTRUCTIONS = os.getenv(
     ],
 )
 
-AGENT_CONFIGURATION_COMPONENT = os.getenv(
-    "AGENT_CONFIGURATION_COMPONENT", "agent-configuration"
-)
 AGENT_CONVERSATION_COMPONENT = os.getenv("AGENT_CONVERSATION_COMPONENT", "agent-llm")
 AGENT_PUBSUB_COMPONENT = os.getenv("AGENT_PUBSUB_COMPONENT", "agent-pubsub")
 AGENT_TOPIC = os.getenv("AGENT_TOPIC", "inventory-agent")
@@ -62,28 +62,15 @@ AGENT_MEMORY_COMPONENT = os.getenv("AGENT_MEMORY_COMPONENT", "agent-memory")
 AGENT_RUNTIME_COMPONENT = os.getenv("AGENT_RUNTIME_COMPONENT", "agent-runtime")
 
 
-def _on_config_change(key: str, value: Any) -> None:
-    """Callback invoked after each successful config update."""
-    logger.info(f"Configuration changed: {key} = {value}")
-
-
-def _agent_profile() -> AgentProfileConfig:
-    """Build the base agent persona, including a tagged slot for Drasi updates."""
-    return AgentProfileConfig(
-        name=AGENT_NAME,
-        role=AGENT_ROLE,
-        goal=AGENT_GOAL,
-        instructions=AGENT_INSTRUCTIONS,
-    )
-
-
-def make_agent(
-    tools: list[Any] | None = None,
-) -> DurableAgent:
+def make_agent() -> DurableAgent:
     return DurableAgent(
-        profile=_agent_profile(),
+        profile=AgentProfileConfig(
+            name=AGENT_NAME,
+            role=AGENT_ROLE,
+            goal=AGENT_GOAL,
+            instructions=AGENT_INSTRUCTIONS,
+        ),
         llm=DaprChatClient(component_name=AGENT_CONVERSATION_COMPONENT),
-        tools=tools,
         memory=AgentMemoryConfig(
             store=ConversationDaprStateMemory(store_name=AGENT_MEMORY_COMPONENT),
         ),
@@ -94,13 +81,9 @@ def make_agent(
         state=AgentStateConfig(
             store=StateStoreService(store_name=AGENT_RUNTIME_COMPONENT),
         ),
-        configuration=RuntimeSubscriptionConfig(
-            store_name=AGENT_CONFIGURATION_COMPONENT,
-            keys=[RuntimeConfigKey.AGENT_INSTRUCTIONS],
-            on_config_change=_on_config_change,
-        ),
         execution=AgentExecutionConfig(max_iterations=10),
         hooks=Hooks(
-            before_tool_call=[persist_task_instructions_from_drasi_subscription],
+            before_tool_call=[drasi_write_subscription],
+            before_llm_call=[drasi_read_subscription],
         ),
     )

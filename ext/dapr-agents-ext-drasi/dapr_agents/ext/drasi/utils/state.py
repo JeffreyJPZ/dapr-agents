@@ -14,20 +14,9 @@
 from __future__ import annotations
 
 import json
-import os
-from typing import Any, Iterable
+from typing import Any
 
 from dapr.clients import DaprClient
-
-AGENT_MEMORY_COMPONENT = os.getenv("AGENT_MEMORY_COMPONENT", "agent-memory")
-# TODO: remove hardcoded agent ID
-AGENT_ID = "InventoryAgent"
-DRASI_SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX = "drasi_subscriptions:"
-
-
-def build_subscription_instructions_key(identifier: str | None) -> str:
-    """Build the state key used to persist Drasi task instructions."""
-    return f"{DRASI_SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX}{identifier or ''}"
 
 
 def _decode_state_value(response: Any) -> Any:

@@ -43,6 +43,7 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
     """A WorkflowContextInjectedTool that is aware of Drasi-specific routing metadata."""
 
     _topic: str = PrivateAttr()
+    _subscription_arg: str = PrivateAttr(default="_subscription_id")
     # Reference to the original args_model matching the original MCP tool schema
     _validation_args_model: Type[BaseModel] = PrivateAttr()
     # Reference to the args_model that is exposed to the LLM, which includes an ``instructions`` param
@@ -153,13 +154,13 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
             "Drasi workflow tool requires '_source_agent' in kwargs"
         )
 
-        # Inject agent_id, subscription_id, topic from runtime
+        # Inject agent ID, forwarded subscription ID, topic
         cleaned_kwargs["agent_id"] = agent_id
-        # TODO: replace with context.new_guid() when available
-        cleaned_kwargs["subscription_id"] = (
-            "inventory-agent"  # TODO: replace hardcoded subscription ID
-        )
+        cleaned_kwargs["subscription_id"] = cleaned_kwargs[self._subscription_arg]
         cleaned_kwargs["topic"] = self._topic
+
+        # Strip forwarded subscription ID
+        cleaned_kwargs.pop(self._subscription_arg, None)
 
         try:
             # Point args_model to the validation model so we can validate without instructions

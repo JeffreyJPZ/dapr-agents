@@ -13,12 +13,17 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from dapr.ext.workflow.aio import DaprMCPClient
+
 from dapr_agents.agents.durable import DurableAgent
 from dapr_agents.agents.schemas import TriggerAction
+from dapr_agents.tool.base import AgentTool
+from dapr_agents.tool.mcp import mcp_tool_def_to_workflow_tool
 from dapr_agents.types.activation import ActivationContext
 from dapr_agents.types.workflow import PubSubRouteSpec
 from dapr_agents.workflow.utils.core import is_supported_model
@@ -30,6 +35,7 @@ from dapr_agents.workflow.utils.subscription import (
 )
 
 from dapr_agents.ext.drasi.types import DrasiOperation, DrasiChangeEvent
+from dapr_agents.ext.drasi.tools import DrasiWorkflowTool
 from dapr_agents.ext.drasi.utils.validation import (
     is_supported_operation,
     maybe_coerce_operation,
@@ -64,6 +70,26 @@ class _DrasiTriggerConfig:
     task_mapper: Callable[[DrasiChangeEvent, MessageContext], TriggerAction] | None
     operations: list[DrasiOperation]
     change_model: type[Any] | None
+
+
+@dataclass(frozen=True)
+class _EnableDrasiConfig:
+    """Immutable configuration resolved for one ``enable_drasi`` activation.
+
+    The configuration is created after the MCP tools are loaded and when the
+    activation is attached to a runner. Keeping the resolved values together
+    prevents nested activation helpers from independently closing over the
+    public function arguments.
+
+    Attributes:
+        mcpserver: Name of the MCPServer resource declaring the Drasi agent router MCP server.
+        pubsub: Resolved Dapr pub/sub component name.
+        topic: Resolved topic receiving Drasi events.
+    """
+
+    mcpserver: str
+    pubsub: str | None
+    topic: str
 
 
 def _passes_filter(
@@ -411,6 +437,151 @@ def drasi_trigger(
                     logger.exception(
                         f"[drasi-trigger]: Error while closing subscription for agent '{agent_name}'"
                     )
+
+        return _close
+
+    agent.add_activation(_activate)
+
+
+def enable_drasi(
+    agent: DurableAgent,
+    *,
+    mcpserver: str,
+    pubsub: str | None = None,
+    topic: str | None = None,
+) -> None:
+    """Enable Drasi MCP tools and catch-all event subscriptions for an agent.
+
+    Args:
+        agent: The durable agent to enhance with Drasi tools and an activation.
+        mcpserver: Name of the MCPServer resource declaring the Drasi agent router MCP server.
+        pubsub: Optional Dapr pub/sub component. Invalid or empty values fall
+            back to the agent's configured pub/sub component.
+        topic: Optional topic for Drasi events. Empty values fall back to
+            ``"drasi-events"``.
+
+    Returns:
+        ``None``. The pub/sub subscription is created when the agent is hosted.
+
+    Raises:
+        RuntimeError: If the MCP server cannot be loaded or no pub/sub
+            component can be resolved during activation.
+    """
+    # Immediately validate and resolve the topic so that tool construction can use it.
+    resolved_topic = topic if isinstance(topic, str) and topic else "drasi-events"
+
+    async def _load_mcp_tools() -> list[AgentTool]:
+        """Load MCP tools and wrap the Drasi subscription tool."""
+        client = DaprMCPClient()
+        try:
+            await client.connect(mcpserver)
+            tools: list[AgentTool] = []
+            for tool_def in client.get_all_tools():
+                tool = mcp_tool_def_to_workflow_tool(tool_def)
+                if tool_def.name == "subscribe_drasi_query":
+                    # TODO: support unsubscribe and list queries
+                    tool = DrasiWorkflowTool.to_drasi_workflow_tool(
+                        tool,
+                        topic=resolved_topic,
+                    )
+                tools.append(tool)
+            logger.info(
+                f"Loaded Drasi MCP tools from '{mcpserver}': "
+                f"{[tool.name for tool in tools]}"
+            )
+            return tools
+        except Exception as exc:
+            logger.exception(f"Failed to load MCP tools from '{mcpserver}'")
+            raise RuntimeError(
+                f"Could not load MCP tools from server '{mcpserver}'"
+            ) from exc
+
+    tools = asyncio.run(_load_mcp_tools())
+
+    # Get a fresh event loop
+    asyncio.set_event_loop(asyncio.new_event_loop())
+
+    # Register the tools on the already-created instance. The executor owns
+    # the callable lookup used by LLM dispatch, while ``agent.tools`` is used
+    # for agent metadata and configuration inspection.
+    # TODO: how to register new tools after agent init as agent metadata is already registered?
+    for tool in tools:
+        if agent.tool_executor.get_tool(tool.name) is None:
+            agent.tools.append(tool)
+            agent.tool_executor.register_tool(tool)
+    if tools and agent.execution.tool_choice is None:
+        agent.execution.tool_choice = "auto"
+
+    def _make_task(event: DrasiChangeEvent, ctx: MessageContext) -> TriggerAction:
+        """Serialize a Drasi event as the task message for the agent."""
+        return TriggerAction(task=event.model_dump_json())
+
+    def _resolve_config(ctx: ActivationContext) -> _EnableDrasiConfig:
+        """Lazily resolve configuration with runtime fallbacks."""
+        resolved_pubsub = (
+            pubsub
+            if isinstance(pubsub, str) and pubsub
+            else (ctx.agent.pubsub.pubsub_name if ctx.agent.pubsub else None)
+        )
+        return _EnableDrasiConfig(
+            mcpserver=mcpserver,
+            pubsub=resolved_pubsub,
+            topic=resolved_topic,
+        )
+
+    def _validate_config(config: _EnableDrasiConfig) -> None:
+        """Lazily validate the resolved configuration."""
+        if config.pubsub is None:
+            raise RuntimeError(
+                "No pub/sub component provided and the agent has no pub/sub "
+                "configuration; please set `pubsub=` explicitly or configure "
+                "pub/sub on the agent."
+            )
+
+    def _activate(ctx: ActivationContext) -> Callable[[], None]:
+        """Resolve, validate, and register the Drasi event subscription."""
+        config = _resolve_config(ctx)
+        _validate_config(ctx, config)
+        agent_name = ctx.agent.name or ctx.agent
+
+        def handler_fn(*_) -> None:
+            """Stub handler targeting the agent's workflow."""
+
+        handler_fn.__name__ = ctx.agent.agent_workflow_name
+        specs = [
+            PubSubRouteSpec(
+                pubsub_name=config.pubsub,
+                topic=config.topic,
+                handler_fn=handler_fn,
+                message_model=DrasiChangeEvent,
+                mapper=_make_task,
+            )
+        ]
+        client_factory = getattr(ctx.runner, "_client_factory", None)
+        closers = register_message_routes(
+            dapr_client=ctx.dapr_client,
+            routes=specs,
+            deduper=TTLDedupeBackend(),
+            wf_client=ctx.wf_client,
+            client_factory=client_factory,
+        )
+        logger.info(
+            f"Enabled Drasi subscription for agent '{agent_name}' on "
+            f"{config.pubsub}:{config.topic}"
+        )
+
+        closed = False
+
+        def _close() -> None:
+            nonlocal closed
+            if closed:
+                return
+            closed = True
+            for closer in closers:
+                try:
+                    closer()
+                except Exception:
+                    logger.exception("Error closing Drasi subscription")
 
         return _close
 
