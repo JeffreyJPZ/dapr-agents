@@ -64,7 +64,7 @@ def main() -> None:
 
     enable_drasi(
         agent,
-        mcp_server=AGENT_MCP_COMPONENT,
+        mcpserver=AGENT_MCP_COMPONENT,
         pubsub=AGENT_PUBSUB_COMPONENT,
         topic=DRASI_TOPIC,
     )
