@@ -40,7 +40,8 @@ async def _load_mcp_tools() -> list:
     try:
         await client.connect(AGENT_MCP_COMPONENT)
         tools = [
-            DrasiWorkflowTool.from_mcp_tool_def(tool_def) for tool_def in client.get_all_tools()
+            DrasiWorkflowTool.from_mcp_tool_def(tool_def)
+            for tool_def in client.get_all_tools()
         ]
         logger.info(
             f"Loaded Drasi MCP tools from '{AGENT_MCP_COMPONENT}': "

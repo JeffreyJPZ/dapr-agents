@@ -60,13 +60,9 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
     ) -> "DrasiWorkflowTool":
         """Wrap a framework-agnostic MCP tool definition so it can carry Drasi routing metadata."""
         if tool.func is None:
-            raise ToolError(
-                f"Tool '{tool.name}' must define a callable function"
-            )
+            raise ToolError(f"Tool '{tool.name}' must define a callable function")
         if tool.args_model is None:
-            raise ToolError(
-                f"Tool '{tool.name}' must define an args model"
-            )
+            raise ToolError(f"Tool '{tool.name}' must define an args model")
 
         # Convert to ``WorkflowContextInjectedTool``
         workflow_tool = mcp_tool_def_to_workflow_tool(tool)
@@ -79,7 +75,9 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
             source=workflow_tool.source,
         )
         validation_args_model = workflow_tool.args_model
-        exposed_args_model = drasi_workflow_tool._create_exposed_args_model(validation_args_model)
+        exposed_args_model = drasi_workflow_tool._create_exposed_args_model(
+            validation_args_model
+        )
 
         # Set ``args_model`` to the LLM-exposed model
         drasi_workflow_tool.args_model = exposed_args_model
@@ -135,7 +133,9 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
             properties.pop(field_name, None)
         required[:] = [field for field in required if field not in fields_to_remove]
 
-        return create_pydantic_model_from_schema(schema, f"{base_name}Exposed")  # TODO: is this a good name>
+        return create_pydantic_model_from_schema(
+            schema, f"{base_name}Exposed"
+        )  # TODO: is this a good name>
 
     def _clean_kwargs(self, kwargs: dict[str, Any]) -> dict[str, Any]:
         """Strip LLM-only arguments from a ``kwargs`` tool dict."""

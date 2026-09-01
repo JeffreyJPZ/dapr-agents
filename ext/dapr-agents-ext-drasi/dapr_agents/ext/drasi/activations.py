@@ -467,6 +467,7 @@ def enable_drasi(
         RuntimeError: If the MCP server cannot be loaded or no pub/sub
             component can be resolved during activation.
     """
+
     def _make_task(event: DrasiChangeEvent, ctx: MessageContext) -> TriggerAction:
         """Serialize a Drasi event as the task message for the agent."""
         return TriggerAction(task=event.model_dump_json())
@@ -506,7 +507,7 @@ def enable_drasi(
         config = _resolve_config(ctx)
         _validate_config(ctx, config)
         _set_drasi_tool_topics(ctx.agent, config.topic)
-    
+
         agent_name = ctx.agent.name or ctx.agent
 
         def handler_fn(*_) -> None:
