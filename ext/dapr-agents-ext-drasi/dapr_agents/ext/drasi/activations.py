@@ -445,6 +445,7 @@ def enable_drasi(
     mcpserver: str,  # TODO: do we still need this?
     pubsub: str | None = None,
     topic: str | None = None,
+    load_queries: bool = True,
 ) -> None:
     """Enable dynamic Drasi subscriptions for an agent.
 
@@ -455,6 +456,8 @@ def enable_drasi(
             back to the agent's configured pub/sub component.
         topic: Optional topic for Drasi events. Empty values fall back to
             ``"drasi-events"``.
+        load_queries: Whether to load the available Drasi queries and add them
+            to the agent's system messages during activation. Defaults to ``True``.
 
     Returns:
         ``None``. The pub/sub subscription is created when the agent is hosted.
@@ -600,8 +603,10 @@ def enable_drasi(
         """Resolve, validate, and register the Drasi event subscription."""
         config = _resolve_config(ctx)
         _validate_config(ctx, config)
+
         _set_drasi_tool_topics(ctx.agent, config.topic)
-        _add_drasi_queries_to_system_messages(ctx, config)
+        if load_queries:
+            _add_drasi_queries_to_system_messages(ctx, config)
 
         agent_name = ctx.agent.name or ctx.agent
 
