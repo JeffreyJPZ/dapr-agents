@@ -13,17 +13,13 @@
 
 from __future__ import annotations
 
-import asyncio
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
-from dapr.ext.workflow.aio import DaprMCPClient
-
 from dapr_agents.agents.durable import DurableAgent
 from dapr_agents.agents.schemas import TriggerAction
-from dapr_agents.tool.base import AgentTool
-from dapr_agents.tool.mcp import mcp_tool_def_to_workflow_tool
 from dapr_agents.types.activation import ActivationContext
 from dapr_agents.types.workflow import PubSubRouteSpec
 from dapr_agents.workflow.utils.core import is_supported_model
@@ -472,6 +468,104 @@ def enable_drasi(
         """Serialize a Drasi event as the task message for the agent."""
         return TriggerAction(task=event.model_dump_json())
 
+    # TODO: fix error messages
+    def _add_drasi_queries_to_system_messages(
+        ctx: ActivationContext, config: _EnableDrasiConfig
+    ) -> None:
+        """Load Drasi queries and expose them as an agent system message.
+
+        The MCP ``list_drasi_queries`` workflow is addressed by name. A callable
+        shim is used because :meth:`WorkflowRunner.run_workflow` requires a
+        callable and derives the registered workflow name from ``__name__``.
+
+        Args:
+            ctx: Activation context containing the workflow runner and agent.
+            config: Resolved ``enable_drasi`` configuration.
+
+        Raises:
+            RuntimeError: If the workflow does not complete successfully or
+                returns an invalid JSON response.
+        """
+        workflow_name = (
+            f"dapr.internal.mcp.{config.mcpserver}.CallTool.list_drasi_queries"
+        )
+
+        def list_drasi_queries_workflow(*_: Any) -> None:
+            """Stub handler targeting the registered Dapr workflow used to list Drasi queries."""
+
+        list_drasi_queries_workflow.__name__ = workflow_name
+
+        try:
+            # NOTE: we can only use sync methods here
+            instance_id = ctx.runner.run_workflow(
+                workflow=list_drasi_queries_workflow,
+                payload={"arguments": {}},
+            )
+            state = ctx.runner.wait_for_workflow_completion(
+                instance_id,
+                fetch_payloads=True,
+            )
+        except Exception as exc:
+            logger.exception(
+                f"Failed to retrieve Drasi queries using workflow '{workflow_name}'"
+            )
+            raise RuntimeError(
+                f"Could not retrieve Drasi queries using workflow '{workflow_name}'"
+            ) from exc
+
+        if state is None:
+            raise RuntimeError(
+                f"Drasi query workflow '{workflow_name}' returned no workflow state"
+            )
+
+        runtime_status = getattr(state.runtime_status, "name", state.runtime_status)
+        if runtime_status != "COMPLETED":  # TODO: should we use enum here?
+            raise RuntimeError(
+                f"Drasi query workflow '{workflow_name}' completed with status "
+                f"'{runtime_status}'"
+            )
+
+        serialized_output = getattr(state, "serialized_output", None)
+        if not isinstance(serialized_output, str):
+            raise RuntimeError(
+                f"Drasi query workflow '{workflow_name}' returned no serialized output"
+            )
+
+        try:
+            result = json.loads(serialized_output)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(
+                f"Drasi query workflow '{workflow_name}' returned invalid JSON"
+            ) from exc
+
+        if not isinstance(result, dict) or not isinstance(result.get("queries"), list):
+            raise RuntimeError(
+                f"Drasi query workflow '{workflow_name}' returned a response "
+                "without a valid 'queries' list"
+            )
+
+        queries = json.dumps(result.get("queries", []))
+        queries_message = {
+            "role": "system",
+            "content": (
+                "**Available Queries**:\n\n"  # TODO: add guardrails?
+                f"{queries}"
+            ),
+        }
+
+        if ctx.agent.prompting_helper.prompt_template is None:
+            raise RuntimeError("Agent prompt template is not initialized")
+
+        # The prompting helper owns the template consumed by
+        # build_initial_messages(), so adding the message there includes it in
+        # future LLM calls via the ``call_llm`` activity.
+        # The standard prompt factory places the existing system prompt at index 0,
+        # so index 1 inserts the Drasi context directly below it,
+        # before chat history and the current user task. It is persisted
+        # to workflow state when the next ``call_llm`` activity synchronizes its
+        # rendered system messages.
+        ctx.agent.prompting_helper.prompt_template.messages.insert(1, queries_message)
+
     def _resolve_config(ctx: ActivationContext) -> _EnableDrasiConfig:
         """Lazily resolve configuration with runtime fallbacks."""
         resolved_pubsub = (
@@ -507,6 +601,7 @@ def enable_drasi(
         config = _resolve_config(ctx)
         _validate_config(ctx, config)
         _set_drasi_tool_topics(ctx.agent, config.topic)
+        _add_drasi_queries_to_system_messages(ctx, config)
 
         agent_name = ctx.agent.name or ctx.agent
 
