@@ -22,8 +22,6 @@ from dapr_agents.agents.configs import (
     AgentProfileConfig,
     AgentPubSubConfig,
     AgentStateConfig,
-    RuntimeConfigKey,
-    RuntimeSubscriptionConfig,
 )
 from dapr_agents.hooks import Hooks
 from dapr_agents.memory import ConversationDaprStateMemory

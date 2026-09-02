@@ -17,13 +17,14 @@ import asyncio
 import logging
 import os
 
-from dapr.ext.workflow import DaprMCPClient
+from dapr.ext.workflow.aio import DaprMCPClient
 
 from dapr_agents import AgentRunner
 
 from dapr_agents.ext.drasi import enable_drasi, DrasiWorkflowTool
 
 from agent import make_agent
+from dapr_agents.llm.anthropic import client
 
 logging.basicConfig(level=logging.INFO)
 
@@ -35,19 +36,16 @@ DRASI_TOPIC = "drasi-events"
 
 
 async def _load_mcp_tools() -> list:
-    """Load MCP tools and wrap the Drasi subscription tool."""
     client = DaprMCPClient()
     try:
         await client.connect(AGENT_MCP_COMPONENT)
-        tools = [
-            DrasiWorkflowTool.from_mcp_tool_def(tool_def)
-            for tool_def in client.get_all_tools()
-        ]
+        tool_defs = client.get_all_tools()
         logger.info(
-            f"Loaded Drasi MCP tools from '{AGENT_MCP_COMPONENT}': "
-            f"{[tool.name for tool in tools]}"
+            f"Loaded MCP tools from '{AGENT_MCP_COMPONENT}': "
+            f"{[tool_def.name for tool_def in tool_defs]}"
         )
-        return tools
+        # Convert to ``DrasiWorkflowTool`` instances
+        return [DrasiWorkflowTool.from_mcp_tool_def(tool_def) for tool_def in tool_defs]
     except Exception as exc:
         raise RuntimeError(
             f"Could not load MCP tools from server '{AGENT_MCP_COMPONENT}'"

@@ -542,18 +542,30 @@ def enable_drasi(
                 f"Drasi query workflow '{workflow_name}' returned invalid JSON"
             ) from exc
 
-        if not isinstance(result, dict) or not isinstance(result.get("queries"), list):
+        # Parse ``CallToolResult`` structure
+        structured_content = result.get("structuredContent")
+
+        if not isinstance(structured_content, dict) or not isinstance(
+            structured_content.get("queries"), list
+        ):
             raise RuntimeError(
                 f"Drasi query workflow '{workflow_name}' returned a response "
                 "without a valid 'queries' list"
             )
 
-        queries = json.dumps(result.get("queries", []))
+        queries = structured_content.get("queries", [])
+
+        if not queries:
+            logger.warning(
+                f"Drasi query workflow '{workflow_name}' returned no queries"
+            )
+            return
+
         queries_message = {
             "role": "system",
             "content": (
                 "**Available Drasi Queries**:\n\n"  # TODO: add guardrails?
-                f"{queries}"
+                f"{json.dumps(queries)}"
             ),
         }
 
