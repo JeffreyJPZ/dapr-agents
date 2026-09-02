@@ -14,6 +14,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import uuid
 from copy import deepcopy
 from typing import Any, Callable
@@ -23,11 +24,14 @@ from pydantic import BaseModel, PrivateAttr
 from dapr.ext.workflow.mcp import MCPToolDef
 from dapr.ext.workflow.mcp_schema import create_pydantic_model_from_schema
 
+from dapr_agents.ext.drasi.utils.state import read_state_value, write_state_value
+from dapr_agents.ext.drasi.utils.subscription import TEST_AGENT_ID, build_subscription_key
 from dapr_agents.tool.mcp.dapr_workflow_client import mcp_tool_def_to_workflow_tool
 from dapr_agents.tool.workflow import WorkflowContextInjectedTool
 
 logger = logging.getLogger(__name__)
 
+AGENT_MEMORY_COMPONENT = os.getenv("AGENT_MEMORY_COMPONENT", "agent-memory")
 
 # TODO: this needs to be improved
 DRASI_INSTRUCTIONS_DESCRIPTION = (
@@ -38,6 +42,56 @@ DRASI_INSTRUCTIONS_DESCRIPTION = (
     "when handling the event later. Write it as durable guidance for your "
     "future self, not as a short label."
 )
+
+
+def _wrap_subscription_executor(
+    tool_name: str,
+    executor: Callable[..., Any],
+) -> Callable[..., Any]:
+    """Promote a persisted Drasi subscription after its MCP call succeeds."""
+
+    if tool_name != "subscribe_drasi_query":
+        return executor
+
+    def wrapped_executor(*args: Any, **kwargs: Any) -> Any:
+        result = executor(*args, **kwargs)
+
+        query_id = kwargs.get("query_id")
+        subscription_id = kwargs.get("subscription_id")
+        if not isinstance(query_id, str) or not isinstance(subscription_id, str):
+            logger.warning(
+                "Cannot promote Drasi subscription: missing query_id or "
+                "subscription_id in workflow tool kwargs"
+            )
+            return result
+
+        key = build_subscription_key(query_id, TEST_AGENT_ID, subscription_id)
+        try:
+            state = read_state_value(AGENT_MEMORY_COMPONENT, key)
+            if not isinstance(state, dict):
+                logger.warning(
+                    "Cannot promote Drasi subscription '%s': state record '%s' "
+                    "was not found",
+                    subscription_id,
+                    key,
+                )
+                return result
+
+            write_state_value(
+                AGENT_MEMORY_COMPONENT,
+                key,
+                {**state, "status": "ACTIVE"},
+            )
+        except Exception:
+            logger.warning(
+                "Failed to promote Drasi subscription '%s' to ACTIVE",
+                subscription_id,
+                exc_info=True,
+            )
+        return result
+
+    wrapped_executor.__name__ = getattr(executor, "__name__", tool_name)
+    return wrapped_executor
 
 
 class DrasiWorkflowTool(WorkflowContextInjectedTool):
@@ -62,10 +116,14 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
         from a framework-agnostic MCP tool definition.
         """
         workflow_tool = mcp_tool_def_to_workflow_tool(tool)
+        if workflow_tool.func is None:
+            raise ValueError(
+                f"Drasi workflow tool '{workflow_tool.name}' has no executor"
+            )
         drasi_workflow_tool = cls(
             name=workflow_tool.name,
             description=workflow_tool.description,
-            func=workflow_tool.func,
+            func=_wrap_subscription_executor(workflow_tool.name, workflow_tool.func),
             args_model=workflow_tool.args_model,
             source=workflow_tool.source,
         )
