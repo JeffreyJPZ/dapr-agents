@@ -42,7 +42,7 @@ def _decode_state_value(response: Any) -> Any:
         return text
 
 
-def read_state_value(store_name: str, key: str | None) -> Any:
+def read_state_value(store_name: str, key: str) -> Any:
     """Read a JSON-encoded Dapr state value."""
     with DaprClient() as client:
         response = client.get_state(
@@ -55,7 +55,7 @@ def read_state_value(store_name: str, key: str | None) -> Any:
     return None
 
 
-def write_state_value(store_name: str, key: str | None, value: Any) -> None:
+def write_state_value(store_name: str, key: str, value: Any) -> None:
     """Persist a JSON-serializable value through Dapr state."""
     with DaprClient() as client:
         client.save_state(

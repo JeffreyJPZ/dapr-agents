@@ -16,7 +16,7 @@ from __future__ import annotations
 import logging
 import uuid
 from copy import deepcopy
-from typing import Any, Callable, Type
+from typing import Any, Callable
 
 from pydantic import BaseModel, PrivateAttr
 
@@ -25,7 +25,6 @@ from dapr.ext.workflow.mcp_schema import create_pydantic_model_from_schema
 
 from dapr_agents.tool.mcp.dapr_workflow_client import mcp_tool_def_to_workflow_tool
 from dapr_agents.tool.workflow import WorkflowContextInjectedTool
-from dapr_agents.types import ToolError
 
 logger = logging.getLogger(__name__)
 
@@ -49,24 +48,20 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
     # Used by ``subscribe_drasi_query`` and ``unsubscribe_drasi_query```
     _subscription_arg: str = PrivateAttr(default="_subscription_id")
     # Reference to the original ``args_model`` matching the original MCP tool schema
-    _validation_args_model: Type[BaseModel] = PrivateAttr()
+    _validation_args_model: type[BaseModel] = PrivateAttr()
     # Reference to the ``args_model`` that is exposed to the LLM
-    _exposed_args_model: Type[BaseModel] = PrivateAttr()
+    _exposed_args_model: type[BaseModel] = PrivateAttr()
 
     @classmethod
     def from_mcp_tool_def(
         cls,
         tool: MCPToolDef,  # TODO: is this the right type?
     ) -> "DrasiWorkflowTool":
-        """Wrap a framework-agnostic MCP tool definition so it can carry Drasi routing metadata."""
-        if tool.func is None:
-            raise ToolError(f"Tool '{tool.name}' must define a callable function")
-        if tool.args_model is None:
-            raise ToolError(f"Tool '{tool.name}' must define an args model")
-
-        # Convert to ``WorkflowContextInjectedTool``
+        """
+        Create a ``DrasiWorkflowTool`` carrying Drasi-specific routing metadata
+        from a framework-agnostic MCP tool definition.
+        """
         workflow_tool = mcp_tool_def_to_workflow_tool(tool)
-
         drasi_workflow_tool = cls(
             name=workflow_tool.name,
             description=workflow_tool.description,
@@ -74,11 +69,16 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
             args_model=workflow_tool.args_model,
             source=workflow_tool.source,
         )
-        validation_args_model = workflow_tool.args_model
+
+        validation_args_model = drasi_workflow_tool.args_model
+        if validation_args_model is None:
+            raise ValueError(
+                f"Drasi workflow tool '{drasi_workflow_tool.name}' must have an args_model"
+            )
+
         exposed_args_model = drasi_workflow_tool._create_exposed_args_model(
             validation_args_model
         )
-
         # Set ``args_model`` to the LLM-exposed model
         drasi_workflow_tool.args_model = exposed_args_model
 
@@ -94,7 +94,7 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
     def _create_exposed_args_model(
         self,
         args_model: type[BaseModel] | None,
-    ) -> Type[BaseModel]:
+    ) -> type[BaseModel]:
         """Create the argument model exposed to the LLM for a Drasi tool."""
         if args_model is None:
             schema: dict[str, Any] = {

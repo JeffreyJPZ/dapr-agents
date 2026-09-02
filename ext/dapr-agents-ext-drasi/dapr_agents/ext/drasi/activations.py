@@ -20,6 +20,7 @@ from typing import Any, Callable
 
 from dapr_agents.agents.durable import DurableAgent
 from dapr_agents.agents.schemas import TriggerAction
+from dapr_agents.prompt.chat import ChatPromptTemplate
 from dapr_agents.types.activation import ActivationContext
 from dapr_agents.types.workflow import PubSubRouteSpec
 from dapr_agents.workflow.utils.core import is_supported_model
@@ -556,8 +557,12 @@ def enable_drasi(
             ),
         }
 
-        if ctx.agent.prompting_helper.prompt_template is None:
-            raise RuntimeError("Agent prompt template is not initialized")
+        # PromptTemplateBase does not expose messages, so ensure the configured
+        # template supports the chat-message mutation required here.
+        # TODO: is this a reasonable assumption?
+        prompt_template = ctx.agent.prompting_helper.prompt_template
+        if not isinstance(prompt_template, ChatPromptTemplate):
+            raise RuntimeError("Agent prompt template is not a chat prompt template")
 
         # The prompting helper owns the template consumed by
         # build_initial_messages(), so adding the message there includes it in
@@ -567,7 +572,7 @@ def enable_drasi(
         # before chat history and the current user task. It is persisted
         # to workflow state when the next ``call_llm`` activity synchronizes its
         # rendered system messages.
-        ctx.agent.prompting_helper.prompt_template.messages.insert(1, queries_message)
+        prompt_template.messages.insert(1, queries_message)
 
     def _resolve_config(ctx: ActivationContext) -> _EnableDrasiConfig:
         """Lazily resolve configuration with runtime fallbacks."""
@@ -616,7 +621,7 @@ def enable_drasi(
         handler_fn.__name__ = ctx.agent.agent_workflow_name
         specs = [
             PubSubRouteSpec(
-                pubsub_name=config.pubsub,
+                pubsub_name=config.pubsub,  # type: ignore[arg-type]
                 topic=config.topic,
                 handler_fn=handler_fn,
                 message_model=DrasiChangeEvent,
