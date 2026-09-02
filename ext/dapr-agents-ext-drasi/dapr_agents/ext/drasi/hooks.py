@@ -48,7 +48,6 @@ def _build_subscription_instructions_key(identifier: str | None) -> str:
     return f"{_DRASI_SUBSCRIPTION_INSTRUCTIONS_KEY_PREFIX}{identifier or ''}"
 
 
-# TODO: are hooks sufficient for this? or should we move this to the tool?
 def drasi_write_subscription(
     ctx: ToolHookContext,
 ) -> HookDecision:
@@ -63,7 +62,9 @@ def drasi_write_subscription(
         return Proceed()
 
     query_id = ctx.payload.get("query_id")
-    subscription_id = str(uuid.uuid5(uuid.NAMESPACE_URL, _AGENT_ID))
+    # TODO: remove hardcoded subscription ID once agent ID is available in the tool hook context
+    subscription_id = "inventory-agent"
+    # subscription_id = str(uuid.uuid5(uuid.NAMESPACE_URL, _AGENT_ID))
 
     key = _build_subscription_instructions_key(
         f"{query_id}:{_AGENT_ID}:{subscription_id}"
