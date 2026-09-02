@@ -20,11 +20,11 @@ spec:
     low-stock-event-query: |
       {
         "title": "Low Stock Event",
-        "description": "This query detects when the stock on hand for a product falls below the low stock threshold.",
+        "description": "This query detects when the stock on hand for a product falls below the low stock threshold."
       }
 
     critical-stock-event-query: |
       {
         "title": "Critical Stock Event",
-        "description": "This query detects when the stock on hand for a product drops to zero.",
+        "description": "This query detects when the stock on hand for a product drops to zero."
       }
