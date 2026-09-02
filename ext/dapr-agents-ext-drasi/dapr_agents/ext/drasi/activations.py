@@ -552,7 +552,7 @@ def enable_drasi(
         queries_message = {
             "role": "system",
             "content": (
-                "**Available Queries**:\n\n"  # TODO: add guardrails?
+                "**Available Drasi Queries**:\n\n"  # TODO: add guardrails?
                 f"{queries}"
             ),
         }
