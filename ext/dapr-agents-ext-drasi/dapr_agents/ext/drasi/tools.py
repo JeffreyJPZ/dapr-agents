@@ -25,7 +25,10 @@ from dapr.ext.workflow.mcp import MCPToolDef
 from dapr.ext.workflow.mcp_schema import create_pydantic_model_from_schema
 
 from dapr_agents.ext.drasi.utils.state import read_state_value, write_state_value
-from dapr_agents.ext.drasi.utils.subscription import TEST_AGENT_ID, build_subscription_key
+from dapr_agents.ext.drasi.utils.subscription import (
+    TEST_AGENT_ID,
+    build_subscription_key,
+)
 from dapr_agents.tool.mcp.dapr_workflow_client import mcp_tool_def_to_workflow_tool
 from dapr_agents.tool.workflow import WorkflowContextInjectedTool
 

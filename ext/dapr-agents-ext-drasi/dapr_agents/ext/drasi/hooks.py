@@ -58,6 +58,12 @@ def drasi_write_subscription(
         return Proceed()
 
     query_id = ctx.payload.get("query_id")
+    if not query_id or not isinstance(query_id, str):
+        logger.warning(
+            f"Drasi subscription instructions missing query_id: {ctx.payload}"
+        )
+        return Proceed()
+
     # TODO: remove hardcoded subscription ID once agent ID is available in the tool hook context
     subscription_id = "inventory-agent"
     # subscription_id = str(uuid.uuid5(uuid.NAMESPACE_URL, ctx.metadata.get("agent_id")))
@@ -116,7 +122,9 @@ def drasi_read_subscription(ctx: LLMHookContext) -> HookDecision:
         return Proceed()
 
     key = build_subscription_key(
-        query_id, TEST_AGENT_ID, _SUBSCRIPTION_ID  # TODO: get this from event metadata
+        query_id,
+        TEST_AGENT_ID,
+        _SUBSCRIPTION_ID,  # TODO: get this from event metadata
     )
     state = read_state_value(AGENT_MEMORY_COMPONENT, key)
     subscription_instructions = (
