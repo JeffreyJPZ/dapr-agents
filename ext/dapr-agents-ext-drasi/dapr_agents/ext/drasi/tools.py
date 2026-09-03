@@ -47,23 +47,26 @@ DRASI_INSTRUCTIONS_DESCRIPTION = (
 )
 
 
-def _wrap_subscription_executor(
+def _wrap_subscription_func(
+    func: Callable[..., Any],
     tool_name: str,
-    executor: Callable[..., Any],
 ) -> Callable[..., Any]:
-    """Promote a persisted Drasi subscription after its MCP call succeeds."""
+    """Update a Drasi subscription's status to ``ACTIVE`` after the subscription child workflow completes."""
 
-    if tool_name != "subscribe_drasi_query":
-        return executor
+    def wrapped(*args: Any, **kwargs: Any) -> Any:
+        task = func(*args, **kwargs)
 
-    def wrapped_executor(*args: Any, **kwargs: Any) -> Any:
-        result = executor(*args, **kwargs)
+        # The workflow detects this generator and drives it
+        # with ``yield from``. This ensures the subscription child workflow is
+        # completed before any state-store I/O is performed.
+        result = yield task
 
+        # TODO: move the below into an activity? Or an ``after_tool_call`` hook?
         query_id = kwargs.get("query_id")
         subscription_id = kwargs.get("subscription_id")
         if not isinstance(query_id, str) or not isinstance(subscription_id, str):
             logger.warning(
-                "Cannot promote Drasi subscription: missing query_id or "
+                "Cannot update Drasi subscription: missing query_id or "
                 "subscription_id in workflow tool kwargs"
             )
             return result
@@ -73,10 +76,8 @@ def _wrap_subscription_executor(
             state = read_state_value(AGENT_MEMORY_COMPONENT, key)
             if not isinstance(state, dict):
                 logger.warning(
-                    "Cannot promote Drasi subscription '%s': state record '%s' "
-                    "was not found",
-                    subscription_id,
-                    key,
+                    f"Cannot update Drasi subscription '{subscription_id}':"
+                    f"state record '{key}' was not found"
                 )
                 return result
 
@@ -87,14 +88,13 @@ def _wrap_subscription_executor(
             )
         except Exception:
             logger.warning(
-                "Failed to promote Drasi subscription '%s' to ACTIVE",
-                subscription_id,
+                f"Failed to update Drasi subscription '{subscription_id}' to ACTIVE",
                 exc_info=True,
             )
         return result
 
-    wrapped_executor.__name__ = getattr(executor, "__name__", tool_name)
-    return wrapped_executor
+    wrapped.__name__ = getattr(func, "__name__", tool_name)
+    return wrapped
 
 
 class DrasiWorkflowTool(WorkflowContextInjectedTool):
@@ -123,10 +123,16 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
             raise ValueError(
                 f"Drasi workflow tool '{workflow_tool.name}' has no executor"
             )
+
+        if workflow_tool.name == "subscribe_drasi_query":
+            func = _wrap_subscription_func(workflow_tool.func, workflow_tool.name)
+        else:
+            func = workflow_tool.func
+
         drasi_workflow_tool = cls(
             name=workflow_tool.name,
             description=workflow_tool.description,
-            func=_wrap_subscription_executor(workflow_tool.name, workflow_tool.func),
+            func=func,
             args_model=workflow_tool.args_model,
             source=workflow_tool.source,
         )

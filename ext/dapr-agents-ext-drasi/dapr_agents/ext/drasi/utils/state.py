@@ -19,6 +19,7 @@ from typing import Any
 from dapr.clients import DaprClient
 
 
+# TODO: can we replace these with existing storage APIs from the core?
 def _decode_state_value(response: Any) -> Any:
     if response is None:
         return None

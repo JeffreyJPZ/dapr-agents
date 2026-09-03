@@ -82,10 +82,10 @@ def drasi_write_subscription(
             "subscription_id": subscription_id,
             "status": "PENDING",
             "instructions": instructions,
-        },  # TODO: make this a pydantic model?
+        },  # TODO: make a model for the subscription state?
     )
 
-    # Forward the subscription ID as a hidden arg so the Drasi workflow tool can later promote it.
+    # Forward the subscription ID as a hidden arg so it can be promoted at tool call time.
     mutated_payload = {
         **ctx.payload,
         "_subscription_id": subscription_id,
