@@ -215,10 +215,6 @@ class DrasiWorkflowTool(WorkflowContextInjectedTool):
 
         return cleaned_kwargs
 
-    def _build_subscription_id(self, agent_id: str) -> str:
-        """Build a deterministic subscription ID from agent ID."""
-        return str(uuid.uuid5(uuid.NAMESPACE_URL, agent_id))
-
     def _validate_and_prepare_args(
         self, func: Callable[..., Any], *args: Any, **kwargs: Any
     ) -> dict[str, Any]:
