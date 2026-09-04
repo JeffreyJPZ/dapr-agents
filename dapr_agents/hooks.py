@@ -34,6 +34,9 @@ class HookContext:
     tool_call_id: str = ""
     """llm-assigned id for this specific call. empty for llm-level hooks."""
 
+    metadata: Dict[str, Any] = field(default_factory=dict)
+    """arbitrary metadata the agent runtime can pass to hooks. hook specific."""
+
 
 @dataclass(kw_only=True)
 class LLMHookContext(HookContext):
