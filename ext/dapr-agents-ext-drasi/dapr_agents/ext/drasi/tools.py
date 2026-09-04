@@ -61,7 +61,9 @@ def _wrap_subscription_func(
         # completed before any state-store I/O is performed.
         result = yield task
 
-        # TODO: move the below into an activity? Or an ``after_tool_call`` hook?
+        # TODO: move the I/O into an activity? or an ``after_tool_call`` hook? or both?
+        # ideally should be in activity so we don't block the workflow w/ sync I/O or re-invent retries,
+        # same thing applies to the hooks?
         query_id = kwargs.get("query_id")
         subscription_id = kwargs.get("subscription_id")
         if not isinstance(query_id, str) or not isinstance(subscription_id, str):
