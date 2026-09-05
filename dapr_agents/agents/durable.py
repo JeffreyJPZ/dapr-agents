@@ -726,15 +726,12 @@ class DurableAgent(AgentBase):
                                     )
                                 except json.JSONDecodeError:
                                     hook_payload = {}
-                                hook_metadata = {
-                                    "source_agent": self.name,
-                                }
                                 hook_ctx = ToolHookContext(
                                     step_name=fn_name_check,
                                     source=getattr(tool_obj_check, "source", "local"),
                                     payload=hook_payload,
                                     tool_call_id=tc["id"],
-                                    metadata=hook_metadata,
+                                    agent=self,
                                 )
                                 decision = None
                                 for hook in self._hooks.before_tool_call:
@@ -2332,14 +2329,11 @@ class DurableAgent(AgentBase):
         # message so replays use the recorded output rather than re-running the
         # hook. First non-Proceed decision wins, mirroring before_tool_call.
         before_llm_decision: Optional[HookDecision] = None
-        hook_metadata = {
-            "source_agent": self.name,
-        }
         if self._hooks and self._hooks.before_llm_call:
             hook_payload: Dict[str, Any] = dict(generate_kwargs)
             if "messages" in hook_payload:
                 hook_payload["messages"] = list(hook_payload["messages"])
-            before_ctx = LLMHookContext(payload=hook_payload, metadata=hook_metadata)
+            before_ctx = LLMHookContext(payload=hook_payload, agent=self)
             for hook in self._hooks.before_llm_call:
                 result = hook(before_ctx)
                 if result is not None and not isinstance(result, Proceed):
@@ -2481,14 +2475,11 @@ class DurableAgent(AgentBase):
         # on the after-path since the LLM has already produced output. Hooks
         # receive a shallow copy so in-place mutation cannot bypass the Mutate
         # contract.
-        hook_metadata = {
-            "source_agent": self.name,
-        }
         if self._hooks and self._hooks.after_llm_call:
             after_payload: Dict[str, Any] = dict(generate_kwargs)
             if "messages" in after_payload:
                 after_payload["messages"] = list(after_payload["messages"])
-            after_ctx = LLMHookContext(payload=after_payload, metadata=hook_metadata)
+            after_ctx = LLMHookContext(payload=after_payload, agent=self)
             for hook in self._hooks.after_llm_call:
                 result = hook(after_ctx, dict(assistant_message))
                 if isinstance(result, Mutate) and result.payload is not None:

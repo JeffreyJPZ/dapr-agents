@@ -12,10 +12,13 @@
 #
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from dapr_agents.agents.durable import DurableAgent
 
 
-@dataclass(kw_only=True)
+@dataclass(frozen=True, kw_only=True)
 class HookContext:
     """all the information available to a hook when a step is about to run."""
 
@@ -34,11 +37,11 @@ class HookContext:
     tool_call_id: str = ""
     """llm-assigned id for this specific call. empty for llm-level hooks."""
 
-    metadata: Dict[str, Any] = field(default_factory=dict)
-    """arbitrary metadata the agent runtime can pass to hooks. hook specific."""
+    agent: "DurableAgent"
+    """the agent that is executing the step."""
 
 
-@dataclass(kw_only=True)
+@dataclass(frozen=True, kw_only=True)
 class LLMHookContext(HookContext):
     """Context for ``before_llm_call`` / ``after_llm_call`` hooks.
 
@@ -52,7 +55,7 @@ class LLMHookContext(HookContext):
     payload: Dict[str, Any] = field(default_factory=dict)
 
 
-@dataclass(kw_only=True)
+@dataclass(frozen=True, kw_only=True)
 class ToolHookContext(HookContext):
     """Context for ``before_tool_call`` / ``after_tool_call`` hooks.
 
