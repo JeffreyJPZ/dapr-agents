@@ -21,6 +21,7 @@ from dapr_agents.skills.errors import (
     SkillUnsafePathError,
     SkillUnsupportedMediaTypeError,
 )
+from dapr_agents.skills._sources import FileSystemSkillSource
 from dapr_agents.skills.models import (
     MAX_INSTRUCTIONS_BYTES,
     MAX_RESOURCE_BYTES,
@@ -39,6 +40,7 @@ __all__ = [
     "SkillMetadata",
     "SkillResource",
     "SkillSource",
+    "FileSystemSkillSource",
     "SkillError",
     "SkillNotFoundError",
     "SkillMalformedError",
