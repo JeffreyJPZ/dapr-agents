@@ -35,11 +35,12 @@ class TestDurableAgentSkillsQuickstart:
     def test_09_durable_agent_skills(self, dapr_runtime):  # noqa: ARG002
         """Run a delayed-shipment task through the filesystem skills quickstart."""
         script_path = self.quickstart_dir / "09_durable_agent_skills.py"
+        quickstart_timeout = int(os.getenv("DAPR_AGENTS_QUICKSTART_TIMEOUT", "300"))
         result = run_quickstart_or_examples_script(
             script_path,
             cwd=self.quickstart_dir,
             env=self.env,
-            timeout=300,
+            timeout=quickstart_timeout,
             use_dapr=True,
             app_id="durable-agent-skills",
             app_port=8001,
@@ -63,7 +64,7 @@ class TestDurableAgentSkillsQuickstart:
                     "Content-Type": "application/json",
                 },
                 "wait_seconds": 10,
-                "request_timeout": 300,
+                "request_timeout": quickstart_timeout,
             },
         )
 
